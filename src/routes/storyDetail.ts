@@ -13,7 +13,7 @@ router.get("/:slug", async (req: Request, res: Response) => {
       include: {
         author: { select: { id: true, name: true, image: true, bio: true } },
         chapters: {
-          select: { id: true, title: true, number: true, wordCount: true, createdAt: true },
+          select: { id: true, title: true, number: true, wordCount: true, isLocked: true, price: true, createdAt: true },
           orderBy: { number: "asc" },
         },
         _count: { select: { bookmarks: true, comments: true } },
