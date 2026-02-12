@@ -48,10 +48,24 @@ router.put("/", authRequired, async (req: AuthRequest, res: Response) => {
   try {
     const { name, bio, role } = req.body;
 
+    const existing = await prisma.user.findUnique({
+      where: { email: req.user!.email },
+      select: { role: true },
+    });
+    if (!existing) return res.status(404).json({ error: "User not found" });
+
     const data: any = {};
     if (name) data.name = name;
     if (bio !== undefined) data.bio = bio;
-    if (role === "author") data.role = "author"; // allow upgrade to author only
+    if (role === "author") {
+      if (existing.role === "admin") {
+        return res.status(400).json({ error: "Already an admin" });
+      }
+      if (existing.role === "author") {
+        return res.status(400).json({ error: "Already an author" });
+      }
+      data.role = "author"; // allow upgrade to author only (from reader)
+    }
 
     const user = await prisma.user.update({
       where: { email: req.user!.email },
