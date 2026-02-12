@@ -4,6 +4,15 @@ import { AuthRequest, authRequired } from "../middleware/auth";
 
 const router = Router();
 
+async function createNotificationSafe(args: Parameters<typeof prisma.notification.create>[0]) {
+  try {
+    await prisma.notification.create(args);
+  } catch (error) {
+    // Important: don't break critical flows (approve/reject) if notifications table isn't migrated yet.
+    console.warn("Notification create failed (ignored):", error);
+  }
+}
+
 // ─── Admin middleware ────────────────────────────
 async function adminRequired(req: AuthRequest, res: Response, next: NextFunction) {
   const user = await prisma.user.findUnique({
@@ -208,37 +217,37 @@ router.put("/deposits/:id", authRequired, adminRequired, async (req: AuthRequest
           where: { id: deposit.userId },
           data: { coinBalance: { increment: deposit.coins } },
         }),
-        prisma.notification.create({
-          data: {
-            userId: deposit.userId,
-            type: "wallet",
-            title: "Nạp xu đã được duyệt",
-            message:
-              `Yêu cầu nạp ${deposit.coins} xu (tương ứng ${deposit.amount}đ) đã được duyệt.` +
-              (adminNote ? `\nGhi chú: ${adminNote}` : ""),
-            link: "/wallet",
-          },
-        }),
       ]);
+
+      await createNotificationSafe({
+        data: {
+          userId: deposit.userId,
+          type: "wallet",
+          title: "Nạp xu đã được duyệt",
+          message:
+            `Yêu cầu nạp ${deposit.coins} xu (tương ứng ${deposit.amount}đ) đã được duyệt.` +
+            (adminNote ? `\nGhi chú: ${adminNote}` : ""),
+          link: "/wallet",
+        },
+      });
     } else {
       // Từ chối
-      await prisma.$transaction([
-        prisma.deposit.update({
-          where: { id: deposit.id },
-          data: { status: "rejected", adminNote },
-        }),
-        prisma.notification.create({
-          data: {
-            userId: deposit.userId,
-            type: "wallet",
-            title: "Yêu cầu nạp xu bị từ chối",
-            message:
-              `Yêu cầu nạp ${deposit.coins} xu (tương ứng ${deposit.amount}đ) đã bị từ chối.` +
-              (adminNote ? `\nLý do: ${adminNote}` : ""),
-            link: "/wallet",
-          },
-        }),
-      ]);
+      await prisma.deposit.update({
+        where: { id: deposit.id },
+        data: { status: "rejected", adminNote },
+      });
+
+      await createNotificationSafe({
+        data: {
+          userId: deposit.userId,
+          type: "wallet",
+          title: "Yêu cầu nạp xu bị từ chối",
+          message:
+            `Yêu cầu nạp ${deposit.coins} xu (tương ứng ${deposit.amount}đ) đã bị từ chối.` +
+            (adminNote ? `\nLý do: ${adminNote}` : ""),
+          link: "/wallet",
+        },
+      });
     }
 
     const updated = await prisma.deposit.findUnique({
@@ -306,18 +315,19 @@ router.put("/withdrawals/:id", authRequired, adminRequired, async (req: AuthRequ
           where: { id: withdrawal.id },
           data: { status: "approved", adminNote },
         }),
-        prisma.notification.create({
-          data: {
-            userId: withdrawal.userId,
-            type: "wallet",
-            title: "Yêu cầu rút tiền đã được duyệt",
-            message:
-              `Yêu cầu rút ${withdrawal.amount} xu (tương ứng ${withdrawal.moneyAmount}đ) đã được duyệt.` +
-              (adminNote ? `\nGhi chú: ${adminNote}` : ""),
-            link: "/write/withdraw",
-          },
-        }),
       ]);
+
+      await createNotificationSafe({
+        data: {
+          userId: withdrawal.userId,
+          type: "wallet",
+          title: "Yêu cầu rút tiền đã được duyệt",
+          message:
+            `Yêu cầu rút ${withdrawal.amount} xu (tương ứng ${withdrawal.moneyAmount}đ) đã được duyệt.` +
+            (adminNote ? `\nGhi chú: ${adminNote}` : ""),
+          link: "/write/withdraw",
+        },
+      });
     } else {
       // Từ chối → hoàn xu cho tác giả
       await prisma.$transaction([
@@ -329,18 +339,19 @@ router.put("/withdrawals/:id", authRequired, adminRequired, async (req: AuthRequ
           where: { id: withdrawal.userId },
           data: { coinBalance: { increment: withdrawal.amount } },
         }),
-        prisma.notification.create({
-          data: {
-            userId: withdrawal.userId,
-            type: "wallet",
-            title: "Yêu cầu rút tiền bị từ chối",
-            message:
-              `Yêu cầu rút ${withdrawal.amount} xu (tương ứng ${withdrawal.moneyAmount}đ) đã bị từ chối.` +
-              (adminNote ? `\nLý do: ${adminNote}` : ""),
-            link: "/write/withdraw",
-          },
-        }),
       ]);
+
+      await createNotificationSafe({
+        data: {
+          userId: withdrawal.userId,
+          type: "wallet",
+          title: "Yêu cầu rút tiền bị từ chối",
+          message:
+            `Yêu cầu rút ${withdrawal.amount} xu (tương ứng ${withdrawal.moneyAmount}đ) đã bị từ chối.` +
+            (adminNote ? `\nLý do: ${adminNote}` : ""),
+          link: "/write/withdraw",
+        },
+      });
     }
 
     const updated = await prisma.withdrawal.findUnique({
