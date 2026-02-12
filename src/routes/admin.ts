@@ -160,6 +160,32 @@ router.delete("/stories/:id", authRequired, adminRequired, async (req: AuthReque
   }
 });
 
+// ─── GET /api/admin/stories/:id/chapters — danh sách chương của truyện ──
+router.get("/stories/:id/chapters", authRequired, adminRequired, async (req: AuthRequest, res: Response) => {
+  try {
+    const chapters = await prisma.chapter.findMany({
+      where: { storyId: req.params.id },
+      select: { id: true, title: true, number: true, wordCount: true, isLocked: true, price: true, createdAt: true },
+      orderBy: { number: "asc" },
+    });
+    res.json(chapters);
+  } catch (error) {
+    console.error("Error fetching chapters:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ─── DELETE /api/admin/chapters/:id — xóa chương ──
+router.delete("/chapters/:id", authRequired, adminRequired, async (req: AuthRequest, res: Response) => {
+  try {
+    await prisma.chapter.delete({ where: { id: req.params.id } });
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Error deleting chapter:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // ─── GET /api/admin/deposits — danh sách nạp xu ──
 router.get("/deposits", authRequired, adminRequired, async (req: AuthRequest, res: Response) => {
   try {
