@@ -208,13 +208,37 @@ router.put("/deposits/:id", authRequired, adminRequired, async (req: AuthRequest
           where: { id: deposit.userId },
           data: { coinBalance: { increment: deposit.coins } },
         }),
+        prisma.notification.create({
+          data: {
+            userId: deposit.userId,
+            type: "wallet",
+            title: "Nạp xu đã được duyệt",
+            message:
+              `Yêu cầu nạp ${deposit.coins} xu (tương ứng ${deposit.amount}đ) đã được duyệt.` +
+              (adminNote ? `\nGhi chú: ${adminNote}` : ""),
+            link: "/wallet",
+          },
+        }),
       ]);
     } else {
       // Từ chối
-      await prisma.deposit.update({
-        where: { id: deposit.id },
-        data: { status: "rejected", adminNote },
-      });
+      await prisma.$transaction([
+        prisma.deposit.update({
+          where: { id: deposit.id },
+          data: { status: "rejected", adminNote },
+        }),
+        prisma.notification.create({
+          data: {
+            userId: deposit.userId,
+            type: "wallet",
+            title: "Yêu cầu nạp xu bị từ chối",
+            message:
+              `Yêu cầu nạp ${deposit.coins} xu (tương ứng ${deposit.amount}đ) đã bị từ chối.` +
+              (adminNote ? `\nLý do: ${adminNote}` : ""),
+            link: "/wallet",
+          },
+        }),
+      ]);
     }
 
     const updated = await prisma.deposit.findUnique({
@@ -277,10 +301,23 @@ router.put("/withdrawals/:id", authRequired, adminRequired, async (req: AuthRequ
 
     if (status === "approved") {
       // Duyệt — xu đã bị trừ khi gửi yêu cầu, chỉ cần cập nhật status
-      await prisma.withdrawal.update({
-        where: { id: withdrawal.id },
-        data: { status: "approved", adminNote },
-      });
+      await prisma.$transaction([
+        prisma.withdrawal.update({
+          where: { id: withdrawal.id },
+          data: { status: "approved", adminNote },
+        }),
+        prisma.notification.create({
+          data: {
+            userId: withdrawal.userId,
+            type: "wallet",
+            title: "Yêu cầu rút tiền đã được duyệt",
+            message:
+              `Yêu cầu rút ${withdrawal.amount} xu (tương ứng ${withdrawal.moneyAmount}đ) đã được duyệt.` +
+              (adminNote ? `\nGhi chú: ${adminNote}` : ""),
+            link: "/write/withdraw",
+          },
+        }),
+      ]);
     } else {
       // Từ chối → hoàn xu cho tác giả
       await prisma.$transaction([
@@ -291,6 +328,17 @@ router.put("/withdrawals/:id", authRequired, adminRequired, async (req: AuthRequ
         prisma.user.update({
           where: { id: withdrawal.userId },
           data: { coinBalance: { increment: withdrawal.amount } },
+        }),
+        prisma.notification.create({
+          data: {
+            userId: withdrawal.userId,
+            type: "wallet",
+            title: "Yêu cầu rút tiền bị từ chối",
+            message:
+              `Yêu cầu rút ${withdrawal.amount} xu (tương ứng ${withdrawal.moneyAmount}đ) đã bị từ chối.` +
+              (adminNote ? `\nLý do: ${adminNote}` : ""),
+            link: "/write/withdraw",
+          },
         }),
       ]);
     }
@@ -303,6 +351,34 @@ router.put("/withdrawals/:id", authRequired, adminRequired, async (req: AuthRequ
     res.json(updated);
   } catch (error) {
     console.error("Error updating withdrawal:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ─── POST /api/admin/notifications/broadcast — gửi thông báo cho mọi người ──
+router.post("/notifications/broadcast", authRequired, adminRequired, async (req: AuthRequest, res: Response) => {
+  try {
+    const title = (req.body?.title as string | undefined)?.trim();
+    const message = (req.body?.message as string | undefined)?.trim();
+    if (!title || !message) {
+      return res.status(400).json({ error: "Title and message are required" });
+    }
+
+    const users = await prisma.user.findMany({ select: { id: true } });
+    if (users.length === 0) return res.json({ success: true, count: 0 });
+
+    const result = await prisma.notification.createMany({
+      data: users.map((u) => ({
+        userId: u.id,
+        type: "admin",
+        title,
+        message,
+      })),
+    });
+
+    res.json({ success: true, count: result.count });
+  } catch (error) {
+    console.error("Error broadcasting notification:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });

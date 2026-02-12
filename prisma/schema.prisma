@@ -29,6 +29,7 @@ model User {
   deposits      Deposit[]
   purchases     ChapterPurchase[]
   withdrawals   Withdrawal[]
+  notifications Notification[]
   coinBalance   Int       @default(0) // xu hiện tại
 }
 
@@ -175,4 +176,22 @@ model Comment {
   user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   storyId       String
   story         Story     @relation(fields: [storyId], references: [id], onDelete: Cascade)
+}
+
+// ─── Notifications (Thông báo) ──────────────────
+model Notification {
+  id        String   @id @default(cuid())
+  title     String
+  message   String   @db.Text
+  type      String   @default("system") // system | wallet | admin
+  link      String?
+  isRead    Boolean  @default(false)
+  readAt    DateTime?
+  createdAt DateTime @default(now())
+
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([userId, isRead])
 }
