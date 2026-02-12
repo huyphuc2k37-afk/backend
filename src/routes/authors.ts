@@ -37,7 +37,6 @@ router.get("/:id", async (req, res: Response) => {
         id: true,
         title: true,
         slug: true,
-        coverImage: true,
         genre: true,
         status: true,
         views: true,

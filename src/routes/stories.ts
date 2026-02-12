@@ -32,7 +32,19 @@ router.get("/", async (req: Request, res: Response) => {
         orderBy,
         skip: (pageNum - 1) * limitNum,
         take: limitNum,
-        include: {
+        select: {
+          id: true,
+          title: true,
+          slug: true,
+          description: true,
+          genre: true,
+          tags: true,
+          status: true,
+          views: true,
+          likes: true,
+          isAdult: true,
+          createdAt: true,
+          updatedAt: true,
           author: { select: { id: true, name: true, image: true } },
           _count: { select: { chapters: true, bookmarks: true } },
         },
@@ -52,6 +64,29 @@ router.get("/", async (req: Request, res: Response) => {
   } catch (error) {
     console.error("Error fetching stories:", error);
     res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// GET /api/stories/:id/cover — serve cover image as binary with caching
+router.get("/:id/cover", async (req: Request, res: Response) => {
+  try {
+    const story = await prisma.story.findUnique({
+      where: { id: req.params.id },
+      select: { coverImage: true },
+    });
+    if (!story?.coverImage) return res.status(404).end();
+
+    const match = story.coverImage.match(/^data:(image\/[a-zA-Z+]+);base64,(.+)$/);
+    if (!match) return res.status(404).end();
+
+    const [, mimeType, base64Data] = match;
+    const buffer = Buffer.from(base64Data, "base64");
+
+    res.set("Content-Type", mimeType);
+    res.set("Cache-Control", "public, max-age=86400");
+    res.send(buffer);
+  } catch {
+    res.status(500).end();
   }
 });
 

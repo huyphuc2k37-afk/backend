@@ -18,7 +18,13 @@ router.get("/", authRequired, async (req: AuthRequest, res: Response) => {
       where: { userId: user.id },
       include: {
         story: {
-          include: {
+          select: {
+            id: true,
+            title: true,
+            slug: true,
+            genre: true,
+            status: true,
+            views: true,
             author: { select: { id: true, name: true, image: true } },
             _count: { select: { chapters: true } },
           },

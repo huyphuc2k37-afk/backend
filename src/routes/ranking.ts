@@ -13,7 +13,16 @@ router.get("/", async (req: Request, res: Response) => {
     const stories = await prisma.story.findMany({
       orderBy,
       take: parseInt(limit as string),
-      include: {
+      select: {
+        id: true,
+        title: true,
+        slug: true,
+        genre: true,
+        status: true,
+        views: true,
+        likes: true,
+        createdAt: true,
+        updatedAt: true,
         author: { select: { id: true, name: true, image: true } },
         _count: { select: { chapters: true } },
       },
