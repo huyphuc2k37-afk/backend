@@ -20,9 +20,39 @@ const PORT = process.env.PORT || 5000;
 
 // ─── Middleware ───────────────────────────────────
 const normalizeOrigin = (origin: string): string => {
-  // Browsers send Origin without trailing slash (e.g. https://vstory.vn)
-  // Render env vars are easy to misconfigure with a trailing slash.
-  return origin.trim().replace(/\/+$/, "");
+  // Normalize for reliable comparisons:
+  // - trim whitespace
+  // - strip trailing slashes
+  // - lowercase hostname
+  // - keep protocol + host (+ port if present)
+  const trimmed = origin.trim().replace(/\/+$/, "");
+  try {
+    const url = new URL(trimmed);
+    const hostname = url.hostname.toLowerCase();
+    const port = url.port ? `:${url.port}` : "";
+    return `${url.protocol}//${hostname}${port}`;
+  } catch {
+    return trimmed;
+  }
+};
+
+const addWwwApexPair = (origin: string, set: Set<string>) => {
+  // If env only includes apex or www, allow the other as well.
+  // Keeps CORS strict while handling common domain setups.
+  try {
+    const url = new URL(origin);
+    const hostname = url.hostname.toLowerCase();
+    const port = url.port ? `:${url.port}` : "";
+    const base = `${url.protocol}//`;
+
+    if (hostname.startsWith("www.")) {
+      set.add(`${base}${hostname.slice(4)}${port}`);
+    } else {
+      set.add(`${base}www.${hostname}${port}`);
+    }
+  } catch {
+    // ignore
+  }
 };
 
 const parseAllowedOrigins = (value: string | undefined): string[] => {
@@ -33,11 +63,19 @@ const parseAllowedOrigins = (value: string | undefined): string[] => {
     .filter(Boolean);
 };
 
-const allowedOrigins = new Set<string>([
-  "http://localhost:3000",
-  ...(process.env.FRONTEND_URL ? [normalizeOrigin(process.env.FRONTEND_URL)] : []),
-  ...parseAllowedOrigins(process.env.ALLOWED_ORIGINS),
-]);
+const allowedOrigins = new Set<string>();
+allowedOrigins.add("http://localhost:3000");
+
+if (process.env.FRONTEND_URL) {
+  const frontendOrigin = normalizeOrigin(process.env.FRONTEND_URL);
+  allowedOrigins.add(frontendOrigin);
+  addWwwApexPair(frontendOrigin, allowedOrigins);
+}
+
+for (const origin of parseAllowedOrigins(process.env.ALLOWED_ORIGINS)) {
+  allowedOrigins.add(origin);
+  addWwwApexPair(origin, allowedOrigins);
+}
 
 app.use(
   cors({
