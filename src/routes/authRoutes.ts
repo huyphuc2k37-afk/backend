@@ -6,11 +6,19 @@ import prisma from "../lib/prisma";
 
 const router = Router();
 
-// Supabase client for email verification
-const supabase = createClient(
-  process.env.SUPABASE_URL || "",
-  process.env.SUPABASE_ANON_KEY || ""
-);
+// Lazy Supabase client — only created when auth endpoints are called
+let _supabase: ReturnType<typeof createClient> | null = null;
+function getSupabase() {
+  if (!_supabase) {
+    const url = process.env.SUPABASE_URL;
+    const key = process.env.SUPABASE_ANON_KEY;
+    if (!url || !key) {
+      throw new Error("SUPABASE_URL and SUPABASE_ANON_KEY must be set");
+    }
+    _supabase = createClient(url, key);
+  }
+  return _supabase;
+}
 
 // ─── POST /api/auth/register — đăng ký bằng email ──
 router.post("/register", async (req: Request, res: Response) => {
@@ -32,7 +40,7 @@ router.post("/register", async (req: Request, res: Response) => {
     }
 
     // Sign up via Supabase Auth (sends verification email)
-    const { data: supaData, error: supaError } = await supabase.auth.signUp({
+    const { data: supaData, error: supaError } = await getSupabase().auth.signUp({
       email,
       password,
     });
@@ -77,7 +85,7 @@ router.post("/verify", async (req: Request, res: Response) => {
     }
 
     // Verify OTP with Supabase
-    const { data, error } = await supabase.auth.verifyOtp({
+    const { data, error } = await getSupabase().auth.verifyOtp({
       email,
       token: code,
       type: "signup",
@@ -172,7 +180,7 @@ router.post("/resend", async (req: Request, res: Response) => {
     if (!user) return res.status(404).json({ error: "Không tìm thấy tài khoản" });
     if (user.emailVerified) return res.json({ success: true, message: "Email đã được xác nhận" });
 
-    const { error } = await supabase.auth.resend({
+    const { error } = await getSupabase().auth.resend({
       type: "signup",
       email,
     });
