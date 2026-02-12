@@ -19,17 +19,23 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 // ─── Middleware ───────────────────────────────────
+const normalizeOrigin = (origin: string): string => {
+  // Browsers send Origin without trailing slash (e.g. https://vstory.vn)
+  // Render env vars are easy to misconfigure with a trailing slash.
+  return origin.trim().replace(/\/+$/, "");
+};
+
 const parseAllowedOrigins = (value: string | undefined): string[] => {
   if (!value) return [];
   return value
     .split(",")
-    .map((origin) => origin.trim())
+    .map((origin) => normalizeOrigin(origin))
     .filter(Boolean);
 };
 
 const allowedOrigins = new Set<string>([
   "http://localhost:3000",
-  ...(process.env.FRONTEND_URL ? [process.env.FRONTEND_URL] : []),
+  ...(process.env.FRONTEND_URL ? [normalizeOrigin(process.env.FRONTEND_URL)] : []),
   ...parseAllowedOrigins(process.env.ALLOWED_ORIGINS),
 ]);
 
@@ -37,8 +43,9 @@ app.use(
   cors({
     origin: (origin, callback) => {
       if (!origin) return callback(null, true);
-      if (allowedOrigins.has(origin)) return callback(null, true);
-      return callback(new Error(`CORS blocked for origin: ${origin}`));
+      const normalizedOrigin = normalizeOrigin(origin);
+      if (allowedOrigins.has(normalizedOrigin)) return callback(null, true);
+      return callback(new Error(`CORS blocked for origin: ${normalizedOrigin}`));
     },
     credentials: true,
   })
