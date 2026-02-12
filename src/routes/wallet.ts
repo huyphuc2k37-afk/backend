@@ -36,10 +36,16 @@ router.get("/", authRequired, async (req: AuthRequest, res: Response) => {
       take: 50,
     });
 
+    // IDs of purchased chapters (for quick lookup)
+    const purchasedChapterIds = purchases.map((p) => p.chapterId);
+
     res.json({
+      userId: user.id,
+      coinBalance: user.coinBalance,
       balance: user.coinBalance,
       deposits,
       purchases,
+      purchasedChapterIds,
     });
   } catch (error) {
     console.error("Error fetching wallet:", error);
