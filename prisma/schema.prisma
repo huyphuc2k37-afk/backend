@@ -1,0 +1,124 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Users ───────────────────────────────────────
+model User {
+  id            String    @id @default(cuid())
+  name          String
+  email         String    @unique
+  image         String?
+  role          String    @default("reader") // reader | author | admin
+  bio           String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  stories       Story[]
+  bookmarks     Bookmark[]
+  readHistory   ReadHistory[]
+  comments      Comment[]
+}
+
+// ─── Stories ─────────────────────────────────────
+model Story {
+  id              String    @id @default(cuid())
+  title           String
+  slug            String    @unique
+  description     String
+  coverImage      String?
+  genre           String    // Tiên hiệp, Kiếm hiệp, etc.
+  status          String    @default("ongoing") // ongoing | completed | paused
+  tags            String?   // comma-separated
+  views           Int       @default(0)
+  likes           Int       @default(0)
+
+  // ── Đề cương (Outline) ──
+  theme           String?   // chủ đề
+  expectedChapters Int?     // số chương dự kiến
+  worldBuilding   String?   // thiết lập thế giới
+  characters      String?   // JSON: [{name, role, description}]
+  plotOutline     String?   // JSON: [{order, title, summary}]
+
+  // ── Cài đặt ──
+  targetAudience  String?   // "13-17" | "18-25" | "25+"
+  postSchedule    String?   // comma-separated days: "mon,wed,fri"
+  isAdult         Boolean   @default(false)
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  authorId        String
+  author          User      @relation(fields: [authorId], references: [id])
+  chapters        Chapter[]
+  bookmarks       Bookmark[]
+  readHistory     ReadHistory[]
+  comments        Comment[]
+}
+
+// ─── Chapters ────────────────────────────────────
+model Chapter {
+  id            String    @id @default(cuid())
+  title         String
+  number        Int
+  content       String    // full text content
+  wordCount     Int       @default(0)
+  isLocked      Boolean   @default(false)
+  price         Int       @default(0)     // VNĐ, 0 = free
+  authorNote    String?   // ghi chú tác giả cuối chương
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  storyId       String
+  story         Story     @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  readHistory   ReadHistory[]
+
+  @@unique([storyId, number])
+}
+
+// ─── Bookmarks (Tủ truyện) ──────────────────────
+model Bookmark {
+  id            String    @id @default(cuid())
+  createdAt     DateTime  @default(now())
+
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  storyId       String
+  story         Story     @relation(fields: [storyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, storyId])
+}
+
+// ─── Reading History ────────────────────────────
+model ReadHistory {
+  id            String    @id @default(cuid())
+  lastReadAt    DateTime  @default(now())
+
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  storyId       String
+  story         Story     @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  chapterId     String
+  chapter       Chapter   @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, storyId])
+}
+
+// ─── Comments ───────────────────────────────────
+model Comment {
+  id            String    @id @default(cuid())
+  content       String
+  createdAt     DateTime  @default(now())
+
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  storyId       String
+  story         Story     @relation(fields: [storyId], references: [id], onDelete: Cascade)
+}
