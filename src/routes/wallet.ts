@@ -138,6 +138,16 @@ router.post("/purchase", authRequired, async (req: AuthRequest, res: Response) =
       }),
     ]);
 
+    // Thông báo cho tác giả (fire-and-forget)
+    prisma.notification.create({
+      data: {
+        userId: chapter.story.authorId,
+        title: "Có người mua chương truyện",
+        message: `Ai đó đã mua chương "${chapter.title}" với giá ${chapter.price} xu. Bạn nhận được ${authorShare} xu.`,
+        type: "wallet",
+      },
+    }).catch(() => {});
+
     res.json({ success: true, spent: chapter.price, newBalance: user.coinBalance - chapter.price });
   } catch (error) {
     console.error("Error purchasing chapter:", error);

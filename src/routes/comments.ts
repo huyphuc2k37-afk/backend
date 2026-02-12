@@ -51,6 +51,24 @@ router.post("/", async (req: Request, res: Response) => {
       },
     });
 
+    // Thông báo cho tác giả khi có bình luận mới (fire-and-forget)
+    prisma.story.findUnique({
+      where: { id: storyId },
+      select: { authorId: true, title: true },
+    }).then((story) => {
+      if (story && story.authorId !== user.id) {
+        prisma.notification.create({
+          data: {
+            userId: story.authorId,
+            title: "Bình luận mới",
+            message: `${user.name} đã bình luận về truyện "${story.title}".`,
+            type: "system",
+            link: `/story/${storyId}`,
+          },
+        }).catch(() => {});
+      }
+    }).catch(() => {});
+
     res.status(201).json(comment);
   } catch (error) {
     console.error("Error creating comment:", error);

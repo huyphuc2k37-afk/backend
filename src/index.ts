@@ -16,6 +16,7 @@ import revenueRouter from "./routes/revenue";
 import adminRouter from "./routes/admin";
 import notificationsRouter from "./routes/notifications";
 import authorsRouter from "./routes/authors";
+import followsRouter from "./routes/follows";
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -111,6 +112,7 @@ app.use("/api/revenue", revenueRouter);
 app.use("/api/admin", adminRouter);
 app.use("/api/notifications", notificationsRouter);
 app.use("/api/authors", authorsRouter);
+app.use("/api/follows", followsRouter);
 
 // ─── 404 handler ─────────────────────────────────
 app.use((_req, res) => {
