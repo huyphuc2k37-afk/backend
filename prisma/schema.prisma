@@ -16,8 +16,11 @@ model User {
   id            String    @id @default(cuid())
   name          String
   email         String    @unique
+  password      String?   // hashed, null for Google OAuth users
   image         String?
   role          String    @default("reader") // reader | author | admin
+  provider      String    @default("google") // google | email
+  emailVerified Boolean   @default(false)
   bio           String?   @db.Text
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt

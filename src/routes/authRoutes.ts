@@ -1,0 +1,192 @@
+import { Router, Request, Response } from "express";
+import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
+import { createClient } from "@supabase/supabase-js";
+import prisma from "../lib/prisma";
+
+const router = Router();
+
+// Supabase client for email verification
+const supabase = createClient(
+  process.env.SUPABASE_URL || "",
+  process.env.SUPABASE_ANON_KEY || ""
+);
+
+// ─── POST /api/auth/register — đăng ký bằng email ──
+router.post("/register", async (req: Request, res: Response) => {
+  try {
+    const { email, password, name } = req.body;
+
+    if (!email || !password || !name) {
+      return res.status(400).json({ error: "Vui lòng điền đầy đủ thông tin" });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({ error: "Mật khẩu phải có ít nhất 6 ký tự" });
+    }
+
+    // Check if email already exists
+    const existing = await prisma.user.findUnique({ where: { email } });
+    if (existing) {
+      return res.status(400).json({ error: "Email đã được sử dụng" });
+    }
+
+    // Sign up via Supabase Auth (sends verification email)
+    const { data: supaData, error: supaError } = await supabase.auth.signUp({
+      email,
+      password,
+    });
+
+    if (supaError) {
+      console.error("Supabase signup error:", supaError);
+      return res.status(400).json({ error: supaError.message });
+    }
+
+    // Hash password for our DB
+    const hashedPassword = await bcrypt.hash(password, 12);
+
+    // Create user in our DB (unverified)
+    await prisma.user.create({
+      data: {
+        name,
+        email,
+        password: hashedPassword,
+        provider: "email",
+        emailVerified: false,
+      },
+    });
+
+    res.json({
+      success: true,
+      message: "Đã gửi mã xác nhận đến email của bạn",
+      requireVerification: true,
+    });
+  } catch (error) {
+    console.error("Error registering:", error);
+    res.status(500).json({ error: "Lỗi server" });
+  }
+});
+
+// ─── POST /api/auth/verify — xác nhận mã OTP từ email ──
+router.post("/verify", async (req: Request, res: Response) => {
+  try {
+    const { email, code } = req.body;
+
+    if (!email || !code) {
+      return res.status(400).json({ error: "Thiếu email hoặc mã xác nhận" });
+    }
+
+    // Verify OTP with Supabase
+    const { data, error } = await supabase.auth.verifyOtp({
+      email,
+      token: code,
+      type: "signup",
+    });
+
+    if (error) {
+      console.error("Supabase verify error:", error);
+      return res.status(400).json({ error: "Mã xác nhận không đúng hoặc đã hết hạn" });
+    }
+
+    // Mark user as verified in our DB
+    await prisma.user.update({
+      where: { email },
+      data: { emailVerified: true },
+    });
+
+    res.json({ success: true, message: "Xác nhận email thành công" });
+  } catch (error) {
+    console.error("Error verifying:", error);
+    res.status(500).json({ error: "Lỗi server" });
+  }
+});
+
+// ─── POST /api/auth/login — đăng nhập bằng email ──
+router.post("/login", async (req: Request, res: Response) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({ error: "Vui lòng nhập email và mật khẩu" });
+    }
+
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (!user || !user.password) {
+      return res.status(401).json({ error: "Email hoặc mật khẩu không đúng" });
+    }
+
+    if (user.provider !== "email") {
+      return res.status(400).json({
+        error: "Tài khoản này sử dụng đăng nhập Google. Vui lòng dùng nút Google.",
+      });
+    }
+
+    if (!user.emailVerified) {
+      return res.status(403).json({
+        error: "Email chưa được xác nhận. Vui lòng kiểm tra hộp thư.",
+        requireVerification: true,
+      });
+    }
+
+    const isValid = await bcrypt.compare(password, user.password);
+    if (!isValid) {
+      return res.status(401).json({ error: "Email hoặc mật khẩu không đúng" });
+    }
+
+    // Create JWT token (same format as NextAuth accessToken)
+    const secret = process.env.NEXTAUTH_SECRET!;
+    const accessToken = jwt.sign(
+      {
+        sub: user.id,
+        email: user.email,
+        name: user.name,
+        picture: user.image,
+      },
+      secret,
+      { expiresIn: "7d" }
+    );
+
+    res.json({
+      success: true,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        image: user.image,
+      },
+      accessToken,
+    });
+  } catch (error) {
+    console.error("Error logging in:", error);
+    res.status(500).json({ error: "Lỗi server" });
+  }
+});
+
+// ─── POST /api/auth/resend — gửi lại mã xác nhận ──
+router.post("/resend", async (req: Request, res: Response) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: "Thiếu email" });
+
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (!user) return res.status(404).json({ error: "Không tìm thấy tài khoản" });
+    if (user.emailVerified) return res.json({ success: true, message: "Email đã được xác nhận" });
+
+    const { error } = await supabase.auth.resend({
+      type: "signup",
+      email,
+    });
+
+    if (error) {
+      console.error("Supabase resend error:", error);
+      return res.status(400).json({ error: "Không thể gửi lại mã. Vui lòng thử lại sau." });
+    }
+
+    res.json({ success: true, message: "Đã gửi lại mã xác nhận" });
+  } catch (error) {
+    console.error("Error resending:", error);
+    res.status(500).json({ error: "Lỗi server" });
+  }
+});
+
+export default router;
