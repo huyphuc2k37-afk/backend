@@ -26,6 +26,58 @@ model User {
   bookmarks     Bookmark[]
   readHistory   ReadHistory[]
   comments      Comment[]
+  deposits      Deposit[]
+  purchases     ChapterPurchase[]
+  withdrawals   Withdrawal[]
+  coinBalance   Int       @default(0) // xu hiện tại
+}
+
+// ─── Deposits (Nạp xu) ──────────────────────────
+model Deposit {
+  id            String    @id @default(cuid())
+  amount        Int       // VNĐ
+  coins         Int       // xu nhận được (bao gồm bonus)
+  method        String    // "zalopay" | "agribank"
+  status        String    @default("pending") // pending | approved | rejected
+  transferNote  String?   // nội dung chuyển khoản
+  proofImage    String?   // ảnh minh chứng
+  adminNote     String?   // ghi chú từ admin
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ─── Chapter Purchases (Mua chương) ─────────────
+model ChapterPurchase {
+  id            String    @id @default(cuid())
+  coins         Int       // xu đã trả
+  createdAt     DateTime  @default(now())
+
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chapterId     String
+  chapter       Chapter   @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, chapterId])
+}
+
+// ─── Withdrawals (Rút tiền tác giả) ─────────────
+model Withdrawal {
+  id              String    @id @default(cuid())
+  amount          Int       // xu muốn rút
+  moneyAmount     Int       // VNĐ tương ứng
+  bankName        String
+  bankAccount     String
+  bankHolder      String
+  status          String    @default("pending") // pending | approved | rejected
+  adminNote       String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 // ─── Stories ─────────────────────────────────────
@@ -80,6 +132,7 @@ model Chapter {
   storyId       String
   story         Story     @relation(fields: [storyId], references: [id], onDelete: Cascade)
   readHistory   ReadHistory[]
+  purchases     ChapterPurchase[]
 
   @@unique([storyId, number])
 }

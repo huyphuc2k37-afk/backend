@@ -11,6 +11,9 @@ import rankingRouter from "./routes/ranking";
 import profileRouter from "./routes/profile";
 import commentsRouter from "./routes/comments";
 import storyManageRouter from "./routes/storyManage";
+import walletRouter from "./routes/wallet";
+import revenueRouter from "./routes/revenue";
+import adminRouter from "./routes/admin";
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -36,6 +39,9 @@ app.use("/api/ranking", rankingRouter);
 app.use("/api/profile", profileRouter);
 app.use("/api/comments", commentsRouter);
 app.use("/api/manage", storyManageRouter);
+app.use("/api/wallet", walletRouter);
+app.use("/api/revenue", revenueRouter);
+app.use("/api/admin", adminRouter);
 
 // ─── 404 handler ─────────────────────────────────
 app.use((_req, res) => {
