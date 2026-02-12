@@ -46,7 +46,7 @@ router.get("/", authRequired, async (req: AuthRequest, res: Response) => {
 // PUT /api/profile — update profile
 router.put("/", authRequired, async (req: AuthRequest, res: Response) => {
   try {
-    const { name, bio, role } = req.body;
+    const { name, bio, role, image } = req.body;
 
     const existing = await prisma.user.findUnique({
       where: { email: req.user!.email },
@@ -57,6 +57,7 @@ router.put("/", authRequired, async (req: AuthRequest, res: Response) => {
     const data: any = {};
     if (name) data.name = name;
     if (bio !== undefined) data.bio = bio;
+    if (image !== undefined) data.image = image;
     if (role === "author") {
       if (existing.role === "admin") {
         return res.status(400).json({ error: "Already an admin" });
