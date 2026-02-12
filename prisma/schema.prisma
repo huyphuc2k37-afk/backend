@@ -115,6 +115,13 @@ model Story {
   bookmarks       Bookmark[]
   readHistory     ReadHistory[]
   comments        Comment[]
+
+  @@index([authorId])
+  @@index([views])
+  @@index([likes])
+  @@index([genre])
+  @@index([updatedAt])
+  @@index([status])
 }
 
 // ─── Chapters ────────────────────────────────────
@@ -176,6 +183,8 @@ model Comment {
   user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   storyId       String
   story         Story     @relation(fields: [storyId], references: [id], onDelete: Cascade)
+
+  @@index([storyId, createdAt])
 }
 
 // ─── Notifications (Thông báo) ──────────────────

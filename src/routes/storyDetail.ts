@@ -10,7 +10,19 @@ router.get("/:slug", async (req: Request, res: Response) => {
 
     const story = await prisma.story.findUnique({
       where: { slug },
-      include: {
+      select: {
+        id: true,
+        title: true,
+        slug: true,
+        description: true,
+        genre: true,
+        tags: true,
+        status: true,
+        views: true,
+        likes: true,
+        isAdult: true,
+        createdAt: true,
+        updatedAt: true,
         author: { select: { id: true, name: true, image: true, bio: true } },
         chapters: {
           select: { id: true, title: true, number: true, wordCount: true, isLocked: true, price: true, createdAt: true },
@@ -24,11 +36,11 @@ router.get("/:slug", async (req: Request, res: Response) => {
       return res.status(404).json({ error: "Story not found" });
     }
 
-    // Increment views
-    await prisma.story.update({
+    // Fire-and-forget view increment
+    prisma.story.update({
       where: { slug },
       data: { views: { increment: 1 } },
-    });
+    }).catch(() => {});
 
     res.json(story);
   } catch (error) {

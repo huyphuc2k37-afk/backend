@@ -17,6 +17,7 @@ router.get("/", async (req: Request, res: Response) => {
         user: { select: { id: true, name: true, image: true } },
       },
       orderBy: { createdAt: "desc" },
+      take: 50,
     });
 
     res.json(comments);

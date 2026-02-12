@@ -4,6 +4,30 @@ import { AuthRequest, authRequired } from "../middleware/auth";
 
 const router = Router();
 
+// GET /api/bookmarks/check?storyId=xxx — check if story is bookmarked
+router.get("/check", authRequired, async (req: AuthRequest, res: Response) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { email: req.user!.email },
+      select: { id: true },
+    });
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    const storyId = req.query.storyId as string;
+    if (!storyId) return res.status(400).json({ error: "storyId required" });
+
+    const bookmark = await prisma.bookmark.findUnique({
+      where: { userId_storyId: { userId: user.id, storyId } },
+      select: { id: true },
+    });
+
+    res.json({ bookmarked: !!bookmark });
+  } catch (error) {
+    console.error("Error checking bookmark:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // GET /api/bookmarks — get user's bookmarks
 router.get("/", authRequired, async (req: AuthRequest, res: Response) => {
   try {

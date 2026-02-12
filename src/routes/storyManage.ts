@@ -45,7 +45,21 @@ router.get("/stories/:id", authRequired, async (req: AuthRequest, res: Response)
 
     const story = await prisma.story.findUnique({
       where: { id: req.params.id },
-      include: {
+      select: {
+        id: true,
+        title: true,
+        slug: true,
+        description: true,
+        coverImage: true,
+        genre: true,
+        tags: true,
+        status: true,
+        views: true,
+        likes: true,
+        isAdult: true,
+        createdAt: true,
+        updatedAt: true,
+        authorId: true,
         chapters: {
           orderBy: { number: "asc" },
           select: { id: true, title: true, number: true, wordCount: true, isLocked: true, price: true, createdAt: true, updatedAt: true },
