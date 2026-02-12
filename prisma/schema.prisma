@@ -6,8 +6,9 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 // ─── Users ───────────────────────────────────────
@@ -17,7 +18,7 @@ model User {
   email         String    @unique
   image         String?
   role          String    @default("reader") // reader | author | admin
-  bio           String?
+  bio           String?   @db.Text
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
@@ -32,7 +33,7 @@ model Story {
   id              String    @id @default(cuid())
   title           String
   slug            String    @unique
-  description     String
+  description     String    @db.Text
   coverImage      String?
   genre           String    // Tiên hiệp, Kiếm hiệp, etc.
   status          String    @default("ongoing") // ongoing | completed | paused
@@ -43,9 +44,9 @@ model Story {
   // ── Đề cương (Outline) ──
   theme           String?   // chủ đề
   expectedChapters Int?     // số chương dự kiến
-  worldBuilding   String?   // thiết lập thế giới
-  characters      String?   // JSON: [{name, role, description}]
-  plotOutline     String?   // JSON: [{order, title, summary}]
+  worldBuilding   String?   @db.Text // thiết lập thế giới
+  characters      String?   @db.Text // JSON: [{name, role, description}]
+  plotOutline     String?   @db.Text // JSON: [{order, title, summary}]
 
   // ── Cài đặt ──
   targetAudience  String?   // "13-17" | "18-25" | "25+"
@@ -68,11 +69,11 @@ model Chapter {
   id            String    @id @default(cuid())
   title         String
   number        Int
-  content       String    // full text content
+  content       String    @db.Text // full text content
   wordCount     Int       @default(0)
   isLocked      Boolean   @default(false)
   price         Int       @default(0)     // VNĐ, 0 = free
-  authorNote    String?   // ghi chú tác giả cuối chương
+  authorNote    String?   @db.Text // ghi chú tác giả cuối chương
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
@@ -114,7 +115,7 @@ model ReadHistory {
 // ─── Comments ───────────────────────────────────
 model Comment {
   id            String    @id @default(cuid())
-  content       String
+  content       String    @db.Text
   createdAt     DateTime  @default(now())
 
   userId        String
