@@ -39,6 +39,7 @@ model User {
   storyLikes    StoryLike[]
   ratings       Rating[]
   commentLikes  CommentLike[]
+  earnings      AuthorEarning[]
 }
 
 // ─── Deposits (Nạp xu) ──────────────────────────
@@ -283,4 +284,24 @@ model Rating {
   story     Story    @relation(fields: [storyId], references: [id], onDelete: Cascade)
 
   @@unique([userId, storyId])
+}
+
+// ─── Author Earnings (Doanh thu tác giả) ─────────
+model AuthorEarning {
+  id           String   @id @default(cuid())
+  type         String   // "purchase" | "tip"
+  amount       Int      // xu tác giả nhận được
+  createdAt    DateTime @default(now())
+
+  authorId     String
+  author       User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  fromUserId   String?  // người mua / tặng
+  chapterId    String?  // chương liên quan
+  storyId      String?  // truyện liên quan
+  storyTitle   String?  // cache tên truyện
+  chapterTitle String?  // cache tên chương
+
+  @@index([authorId, createdAt])
+  @@index([authorId, type])
+  @@index([storyId])
 }

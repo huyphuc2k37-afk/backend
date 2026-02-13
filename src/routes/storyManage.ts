@@ -321,4 +321,73 @@ router.delete("/chapters/:id", authRequired, async (req: AuthRequest, res: Respo
   }
 });
 
+// ─── GET /api/manage/dashboard — dữ liệu dashboard tác giả (earnings, views chart) ──
+router.get("/dashboard", authRequired, async (req: AuthRequest, res: Response) => {
+  try {
+    const user = await prisma.user.findUnique({ where: { email: req.user!.email } });
+    if (!user || (user.role !== "author" && user.role !== "admin")) {
+      return res.status(403).json({ error: "Author only" });
+    }
+
+    // Get author's stories
+    const stories = await prisma.story.findMany({
+      where: { authorId: user.id },
+      select: { id: true, views: true, likes: true, title: true },
+    });
+
+    const totalViews = stories.reduce((s, st) => s + st.views, 0);
+    const totalLikes = stories.reduce((s, st) => s + st.likes, 0);
+
+    // Today's earnings
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+    const todayEarnings = await prisma.authorEarning.aggregate({
+      where: { authorId: user.id, createdAt: { gte: startOfDay } },
+      _sum: { amount: true },
+    });
+
+    // This month earnings  
+    const startOfMonth = new Date();
+    startOfMonth.setDate(1);
+    startOfMonth.setHours(0, 0, 0, 0);
+    const monthEarnings = await prisma.authorEarning.aggregate({
+      where: { authorId: user.id, createdAt: { gte: startOfMonth } },
+      _sum: { amount: true },
+    });
+
+    // 14-day earnings chart (real data)
+    const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+    const recentEarnings = await prisma.authorEarning.findMany({
+      where: { authorId: user.id, createdAt: { gte: fourteenDaysAgo } },
+      select: { amount: true, createdAt: true },
+    });
+
+    const dailyMap: Record<string, number> = {};
+    for (let i = 0; i < 14; i++) {
+      const d = new Date(Date.now() - (13 - i) * 24 * 60 * 60 * 1000);
+      dailyMap[d.toISOString().slice(0, 10)] = 0;
+    }
+    for (const e of recentEarnings) {
+      const key = e.createdAt.toISOString().slice(0, 10);
+      if (dailyMap[key] !== undefined) dailyMap[key] += e.amount;
+    }
+    const earningsChart = Object.entries(dailyMap).map(([date, value]) => ({
+      day: new Date(date).toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit" }),
+      value,
+    }));
+
+    res.json({
+      balance: user.coinBalance,
+      totalViews,
+      totalLikes,
+      todayEarnings: todayEarnings._sum.amount || 0,
+      monthEarnings: monthEarnings._sum.amount || 0,
+      earningsChart,
+    });
+  } catch (error) {
+    console.error("Error fetching dashboard:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 export default router;

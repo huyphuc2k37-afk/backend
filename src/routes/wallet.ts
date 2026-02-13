@@ -98,7 +98,7 @@ router.post("/purchase", authRequired, async (req: AuthRequest, res: Response) =
     // Kiểm tra chương có tồn tại và có khóa không
     const chapter = await prisma.chapter.findUnique({
       where: { id: chapterId },
-      include: { story: { select: { authorId: true } } },
+      include: { story: { select: { authorId: true, title: true } } },
     });
     if (!chapter) return res.status(404).json({ error: "Chapter not found" });
     if (!chapter.isLocked) return res.status(400).json({ error: "Chapter is free" });
@@ -136,6 +136,19 @@ router.post("/purchase", authRequired, async (req: AuthRequest, res: Response) =
           coins: chapter.price,
         },
       }),
+      // Ghi nhận doanh thu tác giả
+      prisma.authorEarning.create({
+        data: {
+          type: "purchase",
+          amount: authorShare,
+          authorId: chapter.story.authorId,
+          fromUserId: user.id,
+          chapterId,
+          storyId: chapter.storyId,
+          storyTitle: chapter.story.title,
+          chapterTitle: chapter.title,
+        },
+      }),
     ]);
 
     // Thông báo cho tác giả (fire-and-forget)
@@ -143,8 +156,9 @@ router.post("/purchase", authRequired, async (req: AuthRequest, res: Response) =
       data: {
         userId: chapter.story.authorId,
         title: "Có người mua chương truyện",
-        message: `Ai đó đã mua chương "${chapter.title}" với giá ${chapter.price} xu. Bạn nhận được ${authorShare} xu.`,
+        message: `Ai đó đã mua chương "${chapter.title}" trong "${chapter.story.title}" với giá ${chapter.price} xu. Bạn nhận được ${authorShare} xu.`,
         type: "wallet",
+        link: "/write/revenue",
       },
     }).catch(() => {});
 
@@ -203,6 +217,22 @@ router.post("/tip", authRequired, async (req: AuthRequest, res: Response) => {
         where: { id: chapter.story.authorId },
         data: { coinBalance: { increment: amount } },
         select: { id: true },
+      })
+    );
+
+    // Ghi nhận doanh thu tác giả (tip)
+    txOps.push(
+      prisma.authorEarning.create({
+        data: {
+          type: "tip",
+          amount,
+          authorId: chapter.story.authorId,
+          fromUserId: user.id,
+          chapterId,
+          storyId: chapter.storyId,
+          storyTitle: chapter.story.title,
+          chapterTitle: chapter.title,
+        },
       })
     );
 
