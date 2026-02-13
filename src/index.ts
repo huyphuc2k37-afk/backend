@@ -20,6 +20,7 @@ import authorsRouter from "./routes/authors";
 import followsRouter from "./routes/follows";
 import authRoutes from "./routes/authRoutes";
 import interactionsRouter from "./routes/interactions";
+import sitemapRouter from "./routes/sitemap";
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -119,6 +120,7 @@ app.use("/api/authors", authorsRouter);
 app.use("/api/follows", followsRouter);
 app.use("/api/stories", interactionsRouter); // handles /api/stories/:id/like, /rate
 app.use("/api/auth", authRoutes);
+app.use("/api/sitemap", sitemapRouter);
 
 // ─── 404 handler ─────────────────────────────────
 app.use((_req, res) => {
