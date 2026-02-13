@@ -1,5 +1,6 @@
 import { Router, Request, Response } from "express";
 import prisma from "../lib/prisma";
+import { compressBase64Image } from "../lib/compressImage";
 
 const router = Router();
 
@@ -110,7 +111,7 @@ router.post("/", async (req: Request, res: Response) => {
         title,
         slug,
         description,
-        coverImage,
+        coverImage: coverImage ? await compressBase64Image(coverImage) : undefined,
         genre,
         tags,
         authorId: author.id,

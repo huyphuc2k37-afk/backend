@@ -1,6 +1,7 @@
 import { Router, Response } from "express";
 import prisma from "../lib/prisma";
 import { authRequired, AuthRequest } from "../middleware/auth";
+import { compressBase64Image } from "../lib/compressImage";
 
 const router = Router();
 
@@ -92,9 +93,12 @@ router.post("/stories", authRequired, async (req: AuthRequest, res: Response) =>
       return res.status(400).json({ error: "Thiếu thông tin bắt buộc: tên, slug, mô tả, thể loại" });
     }
 
+    // Compress cover image if provided
+    const compressedCover = coverImage ? await compressBase64Image(coverImage) : undefined;
+
     const story = await prisma.story.create({
       data: {
-        title, slug, description, coverImage, genre, tags,
+        title, slug, description, coverImage: compressedCover, genre, tags,
         theme, expectedChapters: expectedChapters ? parseInt(expectedChapters) : null,
         worldBuilding, characters, plotOutline,
         targetAudience, postSchedule, isAdult: isAdult || false,
@@ -127,7 +131,7 @@ router.put("/stories/:id", authRequired, async (req: AuthRequest, res: Response)
     const data: any = {};
     if (title !== undefined) data.title = title;
     if (description !== undefined) data.description = description;
-    if (coverImage !== undefined) data.coverImage = coverImage;
+    if (coverImage !== undefined) data.coverImage = coverImage ? await compressBase64Image(coverImage) : coverImage;
     if (genre !== undefined) data.genre = genre;
     if (tags !== undefined) data.tags = tags;
     if (status !== undefined) data.status = status;
