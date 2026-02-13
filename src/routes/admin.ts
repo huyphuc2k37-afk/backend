@@ -56,6 +56,32 @@ router.get("/stats", authRequired, adminRequired, async (_req: AuthRequest, res:
   }
 });
 
+// ─── PUT /api/admin/stats/revenue — điều chỉnh doanh thu (xóa/sửa deposit) ──
+router.put("/stats/revenue", authRequired, adminRequired, async (req: AuthRequest, res: Response) => {
+  try {
+    const { action, depositId } = req.body;
+
+    if (action === "delete" && depositId) {
+      // Xóa 1 deposit (không hoàn xu — chỉ xóa record)
+      const deposit = await prisma.deposit.findUnique({ where: { id: depositId } });
+      if (!deposit) return res.status(404).json({ error: "Deposit not found" });
+      await prisma.deposit.delete({ where: { id: depositId } });
+      return res.json({ success: true, message: `Đã xóa deposit ${deposit.amount.toLocaleString("vi-VN")}đ` });
+    }
+
+    if (action === "reset-all") {
+      // Xóa tất cả deposit đã duyệt (test data cleanup)
+      const result = await prisma.deposit.deleteMany({ where: { status: "approved" } });
+      return res.json({ success: true, message: `Đã xóa ${result.count} deposit đã duyệt` });
+    }
+
+    return res.status(400).json({ error: "Invalid action. Use 'delete' or 'reset-all'" });
+  } catch (error) {
+    console.error("Error adjusting revenue:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // ─── GET /api/admin/users — danh sách người dùng ──
 router.get("/users", authRequired, adminRequired, async (req: AuthRequest, res: Response) => {
   try {
@@ -109,6 +135,52 @@ router.put("/users/:id", authRequired, adminRequired, async (req: AuthRequest, r
     res.json(user);
   } catch (error) {
     console.error("Error updating user:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ─── POST /api/admin/users/:id/adjust-coins — cộng/trừ xu tài khoản ──
+router.post("/users/:id/adjust-coins", authRequired, adminRequired, async (req: AuthRequest, res: Response) => {
+  try {
+    const { amount, reason } = req.body;
+    const coins = typeof amount === "string" ? parseInt(amount, 10) : amount;
+    if (!Number.isFinite(coins) || !Number.isInteger(coins) || coins === 0) {
+      return res.status(400).json({ error: "Số xu phải là số nguyên khác 0" });
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: req.params.id } });
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    // Nếu trừ xu, kiểm tra không cho âm
+    if (coins < 0 && user.coinBalance + coins < 0) {
+      return res.status(400).json({
+        error: `Không thể trừ ${Math.abs(coins)} xu. Số dư hiện tại: ${user.coinBalance} xu`,
+      });
+    }
+
+    const updated = await prisma.user.update({
+      where: { id: user.id },
+      data: { coinBalance: { increment: coins } },
+      select: { id: true, coinBalance: true },
+    });
+
+    // Gửi thông báo cho user
+    const action = coins > 0 ? "cộng" : "trừ";
+    await createNotificationSafe({
+      data: {
+        userId: user.id,
+        type: "wallet",
+        title: `Admin đã ${action} ${Math.abs(coins).toLocaleString("vi-VN")} xu`,
+        message: reason
+          ? `Lý do: ${reason}. Số dư mới: ${updated.coinBalance.toLocaleString("vi-VN")} xu.`
+          : `Số dư mới: ${updated.coinBalance.toLocaleString("vi-VN")} xu.`,
+        link: "/wallet",
+      },
+    });
+
+    res.json({ success: true, newBalance: updated.coinBalance });
+  } catch (error) {
+    console.error("Error adjusting coins:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });
