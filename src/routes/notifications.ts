@@ -4,6 +4,28 @@ import { AuthRequest, authRequired } from "../middleware/auth";
 
 const router = Router();
 
+// ─── Auto-cleanup notifications older than 3 days ──
+const NOTIFICATION_TTL_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
+
+async function cleanupOldNotifications() {
+  try {
+    const cutoff = new Date(Date.now() - NOTIFICATION_TTL_MS);
+    const result = await prisma.notification.deleteMany({
+      where: { createdAt: { lt: cutoff } },
+    });
+    if (result.count > 0) {
+      console.log(`🧹 Cleaned up ${result.count} old notifications (>3 days)`);
+    }
+  } catch (error) {
+    console.error("Error cleaning up old notifications:", error);
+  }
+}
+
+// Run cleanup every 6 hours
+setInterval(cleanupOldNotifications, 6 * 60 * 60 * 1000);
+// Run once on startup (after 10s delay)
+setTimeout(cleanupOldNotifications, 10_000);
+
 // ─── GET /api/notifications — danh sách thông báo của user ──
 router.get("/", authRequired, async (req: AuthRequest, res: Response) => {
   try {
@@ -13,13 +35,18 @@ router.get("/", authRequired, async (req: AuthRequest, res: Response) => {
     const user = await prisma.user.findUnique({ where: { email: req.user!.email } });
     if (!user) return res.status(404).json({ error: "User not found" });
 
+    // Only fetch notifications within 3 days
+    const cutoff = new Date(Date.now() - NOTIFICATION_TTL_MS);
+
     const [notifications, unreadCount] = await Promise.all([
       prisma.notification.findMany({
-        where: { userId: user.id },
+        where: { userId: user.id, createdAt: { gte: cutoff } },
         orderBy: { createdAt: "desc" },
         take: limit,
       }),
-      prisma.notification.count({ where: { userId: user.id, isRead: false } }),
+      prisma.notification.count({
+        where: { userId: user.id, isRead: false, createdAt: { gte: cutoff } },
+      }),
     ]);
 
     res.json({ notifications, unreadCount });
