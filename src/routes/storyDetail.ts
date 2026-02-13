@@ -20,6 +20,8 @@ router.get("/:slug", async (req: Request, res: Response) => {
         status: true,
         views: true,
         likes: true,
+        averageRating: true,
+        ratingCount: true,
         isAdult: true,
         createdAt: true,
         updatedAt: true,
@@ -28,7 +30,7 @@ router.get("/:slug", async (req: Request, res: Response) => {
           select: { id: true, title: true, number: true, wordCount: true, isLocked: true, price: true, createdAt: true },
           orderBy: { number: "asc" },
         },
-        _count: { select: { bookmarks: true, comments: true } },
+        _count: { select: { bookmarks: true, comments: true, storyLikes: true } },
       },
     });
 

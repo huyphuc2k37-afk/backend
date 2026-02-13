@@ -36,6 +36,8 @@ model User {
   followers     Follow[]  @relation("Following") // người theo dõi mình
   following     Follow[]  @relation("Follower")  // mình theo dõi ai
   coinBalance   Int       @default(0) // xu hiện tại
+  storyLikes    StoryLike[]
+  ratings       Rating[]
 }
 
 // ─── Deposits (Nạp xu) ──────────────────────────
@@ -98,6 +100,8 @@ model Story {
   tags            String?   // comma-separated
   views           Int       @default(0)
   likes           Int       @default(0)
+  averageRating   Float     @default(0)
+  ratingCount     Int       @default(0)
 
   // ── Đề cương (Outline) ──
   theme           String?   // chủ đề
@@ -120,6 +124,8 @@ model Story {
   bookmarks       Bookmark[]
   readHistory     ReadHistory[]
   comments        Comment[]
+  storyLikes      StoryLike[]
+  ratings         Rating[]
 
   @@index([authorId])
   @@index([views])
@@ -146,6 +152,7 @@ model Chapter {
   story         Story     @relation(fields: [storyId], references: [id], onDelete: Cascade)
   readHistory   ReadHistory[]
   purchases     ChapterPurchase[]
+  comments      Comment[]
 
   @@unique([storyId, number])
 }
@@ -188,8 +195,11 @@ model Comment {
   user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   storyId       String
   story         Story     @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  chapterId     String?
+  chapter       Chapter?  @relation(fields: [chapterId], references: [id], onDelete: Cascade)
 
   @@index([storyId, createdAt])
+  @@index([chapterId, createdAt])
 }
 
 // ─── Notifications (Thông báo) ──────────────────
@@ -222,4 +232,32 @@ model Follow {
 
   @@unique([followerId, followingId])
   @@index([followingId])
+}
+
+// ─── Story Likes (Thích truyện) ──────────────────
+model StoryLike {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  storyId   String
+  story     Story    @relation(fields: [storyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, storyId])
+}
+
+// ─── Ratings (Đánh giá truyện) ───────────────────
+model Rating {
+  id        String   @id @default(cuid())
+  score     Int      // 1-5
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  storyId   String
+  story     Story    @relation(fields: [storyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, storyId])
 }

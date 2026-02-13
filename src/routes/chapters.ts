@@ -14,6 +14,7 @@ router.get("/:id", async (req: Request, res: Response) => {
         story: {
           select: { id: true, title: true, slug: true, authorId: true },
         },
+        _count: { select: { comments: true } },
       },
     });
 

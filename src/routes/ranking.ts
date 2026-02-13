@@ -8,7 +8,10 @@ router.get("/", async (req: Request, res: Response) => {
   try {
     const { sort = "views", limit = "20" } = req.query;
 
-    const orderBy: any = sort === "likes" ? { likes: "desc" } : { views: "desc" };
+    let orderBy: any;
+    if (sort === "likes") orderBy = { likes: "desc" };
+    else if (sort === "rating") orderBy = { averageRating: "desc" };
+    else orderBy = { views: "desc" };
 
     const stories = await prisma.story.findMany({
       orderBy,
@@ -21,6 +24,8 @@ router.get("/", async (req: Request, res: Response) => {
         status: true,
         views: true,
         likes: true,
+        averageRating: true,
+        ratingCount: true,
         createdAt: true,
         updatedAt: true,
         author: { select: { id: true, name: true, image: true } },
