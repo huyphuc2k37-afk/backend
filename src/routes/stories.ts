@@ -52,6 +52,7 @@ router.get("/", async (req: Request, res: Response) => {
       prisma.story.count({ where }),
     ]);
 
+    res.set("Cache-Control", "public, max-age=60, stale-while-revalidate=120");
     res.json({
       stories,
       pagination: {

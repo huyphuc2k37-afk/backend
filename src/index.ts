@@ -1,6 +1,7 @@
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
+import compression from "compression";
 
 // Import routes
 import storiesRouter from "./routes/stories";
@@ -92,6 +93,7 @@ app.use(
     credentials: true,
   })
 );
+app.use(compression());
 app.use(express.json({ limit: "10mb" }));
 
 // ─── Health check ────────────────────────────────

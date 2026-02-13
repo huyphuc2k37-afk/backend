@@ -28,6 +28,7 @@ router.get("/", async (req: Request, res: Response) => {
       },
     });
 
+    res.set("Cache-Control", "public, max-age=120, stale-while-revalidate=300");
     res.json(stories);
   } catch (error) {
     console.error("Error fetching ranking:", error);
