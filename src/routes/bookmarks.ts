@@ -97,4 +97,28 @@ router.post("/", authRequired, async (req: AuthRequest, res: Response) => {
   }
 });
 
+// DELETE /api/bookmarks/:storyId — remove bookmark
+router.delete("/:storyId", authRequired, async (req: AuthRequest, res: Response) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { email: req.user!.email },
+      select: { id: true },
+    });
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    const { storyId } = req.params;
+    const existing = await prisma.bookmark.findUnique({
+      where: { userId_storyId: { userId: user.id, storyId } },
+    });
+
+    if (!existing) return res.json({ bookmarked: false });
+
+    await prisma.bookmark.delete({ where: { id: existing.id } });
+    res.json({ bookmarked: false });
+  } catch (error) {
+    console.error("Error removing bookmark:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 export default router;
