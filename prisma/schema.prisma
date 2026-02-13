@@ -38,6 +38,7 @@ model User {
   coinBalance   Int       @default(0) // xu hiện tại
   storyLikes    StoryLike[]
   ratings       Rating[]
+  commentLikes  CommentLike[]
 }
 
 // ─── Deposits (Nạp xu) ──────────────────────────
@@ -189,6 +190,7 @@ model ReadHistory {
 model Comment {
   id            String    @id @default(cuid())
   content       String    @db.Text
+  likes         Int       @default(0)
   createdAt     DateTime  @default(now())
 
   userId        String
@@ -198,8 +200,29 @@ model Comment {
   chapterId     String?
   chapter       Chapter?  @relation(fields: [chapterId], references: [id], onDelete: Cascade)
 
+  // Reply threading
+  parentId      String?
+  parent        Comment?  @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies       Comment[] @relation("CommentReplies")
+
+  commentLikes  CommentLike[]
+
   @@index([storyId, createdAt])
   @@index([chapterId, createdAt])
+  @@index([parentId])
+}
+
+// ─── Comment Likes (Thích bình luận) ─────────────
+model CommentLike {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  commentId String
+  comment   Comment  @relation(fields: [commentId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, commentId])
 }
 
 // ─── Notifications (Thông báo) ──────────────────

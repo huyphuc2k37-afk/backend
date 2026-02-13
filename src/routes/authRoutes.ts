@@ -161,6 +161,7 @@ router.post("/login", async (req: Request, res: Response) => {
         name: user.name,
         email: user.email,
         image: user.image,
+        role: user.role,
       },
       accessToken,
     });
@@ -194,6 +195,39 @@ router.post("/resend", async (req: Request, res: Response) => {
   } catch (error) {
     console.error("Error resending:", error);
     res.status(500).json({ error: "Lỗi server" });
+  }
+});
+
+// ─── POST /api/auth/sync — sync/upsert Google user and return role ──
+router.post("/sync", async (req: Request, res: Response) => {
+  try {
+    const { email, name, image } = req.body;
+    if (!email) return res.status(400).json({ error: "Email required" });
+
+    let user = await prisma.user.findUnique({ where: { email } });
+    if (!user) {
+      // Create user for Google OAuth
+      user = await prisma.user.create({
+        data: {
+          email,
+          name: name || email.split("@")[0],
+          image: image || null,
+          provider: "google",
+          emailVerified: true,
+          role: "reader",
+        },
+      });
+    }
+
+    res.json({
+      user: {
+        id: user.id,
+        role: user.role,
+      },
+    });
+  } catch (error) {
+    console.error("Error syncing user:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 

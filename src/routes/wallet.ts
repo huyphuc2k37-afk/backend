@@ -181,35 +181,47 @@ router.post("/tip", authRequired, async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ error: "Không thể tặng xu cho chính mình" });
     }
 
-    if (user.coinBalance < amount) {
+    // Admin can gift unlimited xu (no balance check, no deduction)
+    const isAdmin = user.role === "admin";
+
+    if (!isAdmin && user.coinBalance < amount) {
       return res.status(400).json({ error: "Không đủ xu", required: amount, balance: user.coinBalance });
     }
 
-    const [updatedSender] = await prisma.$transaction([
-      prisma.user.update({
-        where: { id: user.id },
-        data: { coinBalance: { decrement: amount } },
-        select: { coinBalance: true, id: true },
-      }),
+    const txOps: any[] = [];
+    if (!isAdmin) {
+      txOps.push(
+        prisma.user.update({
+          where: { id: user.id },
+          data: { coinBalance: { decrement: amount } },
+          select: { coinBalance: true, id: true },
+        })
+      );
+    }
+    txOps.push(
       prisma.user.update({
         where: { id: chapter.story.authorId },
         data: { coinBalance: { increment: amount } },
         select: { id: true },
-      }),
-    ]);
+      })
+    );
+
+    const results = await prisma.$transaction(txOps);
+    const newBalance = isAdmin ? user.coinBalance : results[0].coinBalance;
 
     // Thông báo cho tác giả
+    const senderLabel = isAdmin ? "Admin VStory" : user.name;
     prisma.notification.create({
       data: {
         userId: chapter.story.authorId,
-        title: "Bạn nhận được xu ủng hộ",
-        message: `${user.name} đã tặng ${amount.toLocaleString("vi-VN")} xu ủng hộ chương "${chapter.title}" trong truyện "${chapter.story.title}".`,
+        title: isAdmin ? "🎁 Admin đã tặng xu!" : "Bạn nhận được xu ủng hộ",
+        message: `${senderLabel} đã tặng ${amount.toLocaleString("vi-VN")} xu ủng hộ chương "${chapter.title}" trong truyện "${chapter.story.title}".`,
         type: "wallet",
         link: "/write/revenue",
       },
     }).catch(() => {});
 
-    res.json({ success: true, spent: amount, newBalance: updatedSender.coinBalance });
+    res.json({ success: true, spent: isAdmin ? 0 : amount, newBalance });
   } catch (error) {
     console.error("Error tipping chapter:", error);
     res.status(500).json({ error: "Internal server error" });
