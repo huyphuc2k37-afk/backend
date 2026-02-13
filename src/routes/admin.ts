@@ -185,6 +185,32 @@ router.post("/users/:id/adjust-coins", authRequired, adminRequired, async (req: 
   }
 });
 
+// ─── DELETE /api/admin/users — xóa người dùng (đơn lẻ hoặc hàng loạt) ──
+router.delete("/users", authRequired, adminRequired, async (req: AuthRequest, res: Response) => {
+  try {
+    const { ids } = req.body; // array of user IDs
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: "Cần cung cấp danh sách ID người dùng" });
+    }
+
+    const admin = (req as any).adminUser;
+    // Không cho xóa chính mình
+    if (ids.includes(admin.id)) {
+      return res.status(400).json({ error: "Không thể xóa tài khoản admin đang đăng nhập" });
+    }
+
+    // Xóa tất cả dữ liệu liên quan rồi xóa user
+    const result = await prisma.user.deleteMany({
+      where: { id: { in: ids }, role: { not: "admin" } },
+    });
+
+    res.json({ success: true, deleted: result.count });
+  } catch (error) {
+    console.error("Error deleting users:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // ─── GET /api/admin/stories — danh sách truyện ──
 router.get("/stories", authRequired, adminRequired, async (req: AuthRequest, res: Response) => {
   try {
