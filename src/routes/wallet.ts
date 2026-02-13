@@ -155,4 +155,65 @@ router.post("/purchase", authRequired, async (req: AuthRequest, res: Response) =
   }
 });
 
+// ─── POST /api/wallet/tip — tặng xu cho tác giả theo chương ──
+router.post("/tip", authRequired, async (req: AuthRequest, res: Response) => {
+  try {
+    const user = await prisma.user.findUnique({ where: { email: req.user!.email } });
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    const { chapterId, coins } = req.body;
+    if (!chapterId) return res.status(400).json({ error: "chapterId is required" });
+
+    const amount = typeof coins === "string" ? parseInt(coins, 10) : coins;
+    if (!Number.isFinite(amount) || !Number.isInteger(amount) || amount < 100) {
+      return res.status(400).json({ error: "Số xu tặng tối thiểu là 100" });
+    }
+    if (amount > 50000) {
+      return res.status(400).json({ error: "Số xu tặng tối đa là 50,000" });
+    }
+
+    const chapter = await prisma.chapter.findUnique({
+      where: { id: chapterId },
+      include: { story: { select: { authorId: true, title: true } } },
+    });
+    if (!chapter) return res.status(404).json({ error: "Chapter not found" });
+    if (user.id === chapter.story.authorId) {
+      return res.status(400).json({ error: "Không thể tặng xu cho chính mình" });
+    }
+
+    if (user.coinBalance < amount) {
+      return res.status(400).json({ error: "Không đủ xu", required: amount, balance: user.coinBalance });
+    }
+
+    const [updatedSender] = await prisma.$transaction([
+      prisma.user.update({
+        where: { id: user.id },
+        data: { coinBalance: { decrement: amount } },
+        select: { coinBalance: true, id: true },
+      }),
+      prisma.user.update({
+        where: { id: chapter.story.authorId },
+        data: { coinBalance: { increment: amount } },
+        select: { id: true },
+      }),
+    ]);
+
+    // Thông báo cho tác giả
+    prisma.notification.create({
+      data: {
+        userId: chapter.story.authorId,
+        title: "Bạn nhận được xu ủng hộ",
+        message: `${user.name} đã tặng ${amount.toLocaleString("vi-VN")} xu ủng hộ chương "${chapter.title}" trong truyện "${chapter.story.title}".`,
+        type: "wallet",
+        link: "/write/revenue",
+      },
+    }).catch(() => {});
+
+    res.json({ success: true, spent: amount, newBalance: updatedSender.coinBalance });
+  } catch (error) {
+    console.error("Error tipping chapter:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 export default router;

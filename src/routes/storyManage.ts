@@ -193,6 +193,18 @@ router.post("/stories/:storyId/chapters", authRequired, async (req: AuthRequest,
     });
     const nextNumber = (lastChapter?.number || 0) + 1;
 
+    // Validate lock rules: first 10 chapters must be free, price 100-5000
+    let finalIsLocked = isLocked || false;
+    let finalPrice = price || 0;
+    if (nextNumber <= 10) {
+      finalIsLocked = false;
+      finalPrice = 0;
+    } else if (finalIsLocked) {
+      if (finalPrice < 100 || finalPrice > 5000) {
+        return res.status(400).json({ error: "Giá chương trả phí phải từ 100 đến 5000 xu" });
+      }
+    }
+
     const chapter = await prisma.chapter.create({
       data: {
         title,
@@ -200,8 +212,8 @@ router.post("/stories/:storyId/chapters", authRequired, async (req: AuthRequest,
         content,
         wordCount,
         authorNote,
-        isLocked: isLocked || false,
-        price: price || 0,
+        isLocked: finalIsLocked,
+        price: finalIsLocked ? finalPrice : 0,
         storyId: req.params.storyId,
       },
     });
@@ -259,8 +271,21 @@ router.put("/chapters/:id", authRequired, async (req: AuthRequest, res: Response
       data.wordCount = content.replace(/<[^>]*>/g, "").split(/\s+/).filter(Boolean).length;
     }
     if (authorNote !== undefined) data.authorNote = authorNote;
-    if (isLocked !== undefined) data.isLocked = isLocked;
-    if (price !== undefined) data.price = price;
+
+    // Validate lock rules: first 10 chapters must be free, price 100-5000
+    if (isLocked !== undefined) {
+      if (isLocked && chapter.number <= 10) {
+        return res.status(400).json({ error: "10 chương đầu tiên phải miễn phí" });
+      }
+      data.isLocked = isLocked;
+    }
+    if (price !== undefined) {
+      const finalLocked = data.isLocked !== undefined ? data.isLocked : chapter.isLocked;
+      if (finalLocked && (price < 100 || price > 5000)) {
+        return res.status(400).json({ error: "Giá chương trả phí phải từ 100 đến 5000 xu" });
+      }
+      data.price = price;
+    }
 
     const updated = await prisma.chapter.update({ where: { id: req.params.id }, data });
     res.json(updated);
