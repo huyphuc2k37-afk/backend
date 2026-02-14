@@ -63,7 +63,10 @@ function httpsGet(url: string): Promise<any> {
 
 async function tgPost(method: string, body: Record<string, any>) {
   try {
-    return await httpsPost(`https://api.telegram.org/bot${BOT_TOKEN}/${method}`, body);
+    console.log(`[Telegram] Calling ${method}...`);
+    const result = await httpsPost(`https://api.telegram.org/bot${BOT_TOKEN}/${method}`, body);
+    console.log(`[Telegram] ${method} response:`, JSON.stringify(result).slice(0, 200));
+    return result;
   } catch (err) {
     console.error(`[Telegram] ${method} failed:`, err);
     return null;
@@ -75,7 +78,10 @@ export async function sendTelegramMessage(
   text: string,
   inlineKeyboard?: { text: string; callback_data: string }[][]
 ) {
-  if (!BOT_TOKEN || !CHAT_ID) return;
+  if (!BOT_TOKEN || !CHAT_ID) {
+    console.log("[Telegram] sendTelegramMessage skipped: no token/chatId", { BOT_TOKEN: BOT_TOKEN ? "set" : "empty", CHAT_ID: CHAT_ID ? "set" : "empty" });
+    return;
+  }
   const body: Record<string, any> = {
     chat_id: CHAT_ID,
     text,
@@ -116,6 +122,7 @@ export async function notifyNewDeposit(deposit: {
   transferNote?: string | null;
   user?: { name?: string | null; email?: string | null } | null;
 }) {
+  console.log("[Telegram] notifyNewDeposit called for deposit:", deposit.id);
   const userName = deposit.user?.name || "N/A";
   const userEmail = deposit.user?.email || "N/A";
   const methodLabel = deposit.method === "zalopay" ? "ZaloPay" : "Agribank";

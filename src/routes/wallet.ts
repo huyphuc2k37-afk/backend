@@ -112,7 +112,7 @@ router.post("/deposit", authRequired, async (req: AuthRequest, res: Response) =>
     notifyNewDeposit({
       ...deposit,
       user: { name: user.name, email: user.email },
-    }).catch(() => {});
+    }).catch((err) => console.error("[Telegram] notifyNewDeposit error:", err));
 
     res.json(deposit);
   } catch (error) {
