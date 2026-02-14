@@ -22,6 +22,7 @@ import authRoutes from "./routes/authRoutes";
 import interactionsRouter from "./routes/interactions";
 import sitemapRouter from "./routes/sitemap";
 import moderationRouter from "./routes/moderation";
+import announcementsRouter from "./routes/announcements";
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -123,6 +124,7 @@ app.use("/api/stories", interactionsRouter); // handles /api/stories/:id/like, /
 app.use("/api/auth", authRoutes);
 app.use("/api/sitemap", sitemapRouter);
 app.use("/api/mod", moderationRouter);
+app.use("/api/announcements", announcementsRouter);
 
 // ─── 404 handler ─────────────────────────────────
 app.use((_req, res) => {
