@@ -14,8 +14,9 @@ router.get("/", async (req: Request, res: Response) => {
     if (status) where.status = status as string;
     if (search) {
       where.OR = [
-        { title: { contains: search as string } },
-        { description: { contains: search as string } },
+        { title: { contains: search as string, mode: "insensitive" } },
+        { description: { contains: search as string, mode: "insensitive" } },
+        { author: { name: { contains: search as string, mode: "insensitive" } } },
       ];
     }
 
