@@ -30,14 +30,28 @@ router.get("/:id", authOptional, async (req: AuthRequest, res: Response) => {
       return res.status(403).json({ error: "Truyện chưa được duyệt" });
     }
 
-    // Get prev/next chapters
+    // Block access to unapproved chapters (allow author to still see their own)
+    if (chapter.approvalStatus !== "approved") {
+      // Check if current user is the author
+      const isAuthor = req.user?.email
+        ? await prisma.user.findUnique({ where: { email: req.user.email }, select: { id: true } })
+            .then((u) => u?.id === chapter.story.authorId)
+        : false;
+      if (!isAuthor) {
+        return res.status(403).json({ error: "Chương chưa được duyệt" });
+      }
+    }
+
+    // Get prev/next approved chapters
     const [prev, next] = await Promise.all([
       prisma.chapter.findFirst({
-        where: { storyId: chapter.storyId, number: chapter.number - 1 },
+        where: { storyId: chapter.storyId, number: { lt: chapter.number }, approvalStatus: "approved" },
+        orderBy: { number: "desc" },
         select: { id: true, title: true, number: true },
       }),
       prisma.chapter.findFirst({
-        where: { storyId: chapter.storyId, number: chapter.number + 1 },
+        where: { storyId: chapter.storyId, number: { gt: chapter.number }, approvalStatus: "approved" },
+        orderBy: { number: "asc" },
         select: { id: true, title: true, number: true },
       }),
     ]);

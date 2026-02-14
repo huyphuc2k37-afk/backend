@@ -145,16 +145,20 @@ model Story {
 
 // ─── Chapters ────────────────────────────────────
 model Chapter {
-  id            String    @id @default(cuid())
-  title         String
-  number        Int
-  content       String    @db.Text // full text content
-  wordCount     Int       @default(0)
-  isLocked      Boolean   @default(false)
-  price         Int       @default(0)     // VNĐ, 0 = free
-  authorNote    String?   @db.Text // ghi chú tác giả cuối chương
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id              String    @id @default(cuid())
+  title           String
+  number          Int
+  content         String    @db.Text // full text content
+  wordCount       Int       @default(0)
+  isLocked        Boolean   @default(false)
+  price           Int       @default(0)     // VNĐ, 0 = free
+  authorNote      String?   @db.Text // ghi chú tác giả cuối chương
+  approvalStatus  String    @default("pending") // pending | approved | rejected
+  rejectionReason String?
+  reviewedBy      String?   // ID moderator
+  reviewedAt      DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   storyId       String
   story         Story     @relation(fields: [storyId], references: [id], onDelete: Cascade)
@@ -163,6 +167,7 @@ model Chapter {
   comments      Comment[]
 
   @@unique([storyId, number])
+  @@index([approvalStatus])
 }
 
 // ─── Bookmarks (Tủ truyện) ──────────────────────

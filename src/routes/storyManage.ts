@@ -69,7 +69,7 @@ router.get("/stories/:id", authRequired, async (req: AuthRequest, res: Response)
         authorId: true,
         chapters: {
           orderBy: { number: "asc" },
-          select: { id: true, title: true, number: true, wordCount: true, isLocked: true, price: true, createdAt: true, updatedAt: true },
+          select: { id: true, title: true, number: true, wordCount: true, isLocked: true, price: true, approvalStatus: true, rejectionReason: true, createdAt: true, updatedAt: true },
         },
         _count: { select: { bookmarks: true, comments: true } },
       },
@@ -231,6 +231,7 @@ router.post("/stories/:storyId/chapters", authRequired, async (req: AuthRequest,
         authorNote,
         isLocked: finalIsLocked,
         price: finalIsLocked ? finalPrice : 0,
+        approvalStatus: "pending",
         storyId: req.params.storyId,
       },
     });
@@ -302,6 +303,12 @@ router.put("/chapters/:id", authRequired, async (req: AuthRequest, res: Response
         return res.status(400).json({ error: "Giá chương trả phí phải từ 100 đến 5000 xu" });
       }
       data.price = price;
+    }
+
+    // Reset to pending when author edits content of a chapter
+    if (data.content || data.title) {
+      data.approvalStatus = "pending";
+      data.rejectionReason = null;
     }
 
     const updated = await prisma.chapter.update({ where: { id: req.params.id }, data });

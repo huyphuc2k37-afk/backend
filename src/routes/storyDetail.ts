@@ -28,6 +28,7 @@ router.get("/:slug", async (req: Request, res: Response) => {
         updatedAt: true,
         author: { select: { id: true, name: true, image: true, bio: true } },
         chapters: {
+          where: { approvalStatus: "approved" },
           select: { id: true, title: true, number: true, wordCount: true, isLocked: true, price: true, createdAt: true },
           orderBy: { number: "asc" },
         },
