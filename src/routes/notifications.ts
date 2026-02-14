@@ -56,6 +56,24 @@ router.get("/", authRequired, async (req: AuthRequest, res: Response) => {
   }
 });
 
+// ─── PUT /api/notifications/read-all — đánh dấu tất cả đã đọc ──
+router.put("/read-all", authRequired, async (req: AuthRequest, res: Response) => {
+  try {
+    const user = await prisma.user.findUnique({ where: { email: req.user!.email } });
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    const result = await prisma.notification.updateMany({
+      where: { userId: user.id, isRead: false },
+      data: { isRead: true, readAt: new Date() },
+    });
+
+    res.json({ marked: result.count });
+  } catch (error) {
+    console.error("Error marking all notifications as read:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // ─── PUT /api/notifications/:id/read — đánh dấu đã đọc ──
 router.put("/:id/read", authRequired, async (req: AuthRequest, res: Response) => {
   try {
