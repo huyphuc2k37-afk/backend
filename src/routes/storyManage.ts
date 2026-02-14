@@ -5,6 +5,22 @@ import { compressBase64Image } from "../lib/compressImage";
 
 const router = Router();
 
+const LEGACY_HIDDEN_TAGS = new Set(["truyện dịch", "truyen dich"]);
+
+function sanitizeStoryTags(tags: unknown): string | null | undefined {
+  if (tags === undefined) return undefined;
+  if (tags === null) return null;
+  if (typeof tags !== "string") return null;
+
+  const cleaned = tags
+    .split(",")
+    .map((tag) => tag.trim())
+    .filter(Boolean)
+    .filter((tag) => !LEGACY_HIDDEN_TAGS.has(tag.toLowerCase()));
+
+  return cleaned.length > 0 ? cleaned.join(",") : null;
+}
+
 
 
 // ─── GET /api/manage/stories — danh sách truyện của tác giả ──
@@ -102,9 +118,11 @@ router.post("/stories", authRequired, async (req: AuthRequest, res: Response) =>
     // Compress cover image if provided
     const compressedCover = coverImage ? await compressBase64Image(coverImage) : undefined;
 
+    const sanitizedTags = sanitizeStoryTags(tags);
+
     const story = await prisma.story.create({
       data: {
-        title, slug, description, coverImage: compressedCover, genre, tags,
+        title, slug, description, coverImage: compressedCover, genre, tags: sanitizedTags ?? null,
         theme, expectedChapters: expectedChapters ? parseInt(expectedChapters) : null,
         worldBuilding, characters, plotOutline,
         targetAudience, postSchedule, isAdult: isAdult || false,
@@ -140,7 +158,7 @@ router.put("/stories/:id", authRequired, async (req: AuthRequest, res: Response)
     if (description !== undefined) data.description = description;
     if (coverImage !== undefined) data.coverImage = coverImage ? await compressBase64Image(coverImage) : coverImage;
     if (genre !== undefined) data.genre = genre;
-    if (tags !== undefined) data.tags = tags;
+    if (tags !== undefined) data.tags = sanitizeStoryTags(tags);
     if (status !== undefined) data.status = status;
     if (theme !== undefined) data.theme = theme;
     if (expectedChapters !== undefined) data.expectedChapters = expectedChapters ? parseInt(expectedChapters) : null;
