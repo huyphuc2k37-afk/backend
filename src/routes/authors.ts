@@ -1,6 +1,7 @@
 import { Router, Response } from "express";
 import prisma from "../lib/prisma";
 import { AuthRequest, authRequired } from "../middleware/auth";
+import { splitRevenue } from "../lib/revenueSplit";
 
 const router = Router();
 
@@ -80,6 +81,8 @@ router.post("/:id/gift", authRequired, async (req: AuthRequest, res: Response) =
       return res.status(400).json({ error: "Insufficient balance" });
     }
 
+    const split = splitRevenue(coins);
+
     const [updatedSender] = await prisma.$transaction([
       prisma.user.update({
         where: { id: sender.id },
@@ -88,8 +91,27 @@ router.post("/:id/gift", authRequired, async (req: AuthRequest, res: Response) =
       }),
       prisma.user.update({
         where: { id: author.id },
-        data: { coinBalance: { increment: coins } },
+        data: { coinBalance: { increment: split.author } },
         select: { id: true },
+      }),
+      prisma.authorEarning.create({
+        data: {
+          type: "tip",
+          amount: split.author,
+          authorId: author.id,
+          fromUserId: sender.id,
+        },
+      }),
+      prisma.platformEarning.create({
+        data: {
+          type: "gift",
+          grossAmount: split.gross,
+          authorAmount: split.author,
+          platformAmount: split.platform,
+          taxAmount: split.tax,
+          authorId: author.id,
+          fromUserId: sender.id,
+        },
       }),
     ]);
 
@@ -98,7 +120,7 @@ router.post("/:id/gift", authRequired, async (req: AuthRequest, res: Response) =
         userId: author.id,
         type: "wallet",
         title: "Bạn nhận được xu ủng hộ",
-        message: `${sender.name} đã tặng bạn ${coins.toLocaleString("vi-VN")} xu để ủng hộ sáng tác.`,
+        message: `${sender.name} đã tặng bạn ${coins.toLocaleString("vi-VN")} xu để ủng hộ sáng tác. Bạn nhận được ${split.author.toLocaleString("vi-VN")} xu (đã trừ phí nền tảng & thuế).`,
         link: "/write/revenue",
       },
     });

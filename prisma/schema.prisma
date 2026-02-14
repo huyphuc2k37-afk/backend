@@ -318,6 +318,29 @@ model AuthorEarning {
   @@index([storyId])
 }
 
+// ─── Platform Earnings (Doanh thu nền tảng) ─────
+model PlatformEarning {
+  id            String   @id @default(cuid())
+  type          String   // "purchase" | "tip" | "gift"
+  grossAmount   Int      // tổng xu user đã chi
+  authorAmount  Int      // xu trả cho tác giả (net)
+  platformAmount Int     // phần nền tảng (thực tế)
+  taxAmount     Int      // thuế
+  createdAt     DateTime @default(now())
+
+  authorId      String?
+  fromUserId    String?
+  chapterId     String?
+  storyId       String?
+  storyTitle    String?
+  chapterTitle  String?
+
+  @@index([createdAt])
+  @@index([type, createdAt])
+  @@index([authorId, createdAt])
+  @@index([storyId])
+}
+
 // ─── Announcements (marquee banner) ──────────────
 model Announcement {
   id        String   @id @default(cuid())

@@ -2,6 +2,7 @@ import { Router, Response } from "express";
 import prisma from "../lib/prisma";
 import { AuthRequest, authRequired } from "../middleware/auth";
 import { notifyNewDeposit } from "../lib/telegram";
+import { splitRevenue } from "../lib/revenueSplit";
 
 const router = Router();
 
@@ -62,16 +63,16 @@ router.post("/deposit", authRequired, async (req: AuthRequest, res: Response) =>
     });
     if (!user) return res.status(404).json({ error: "User not found" });
 
-    const { amount, coins, method, transferNote, transferCode: clientCode } = req.body;
+    const { amount, method, transferNote, transferCode: clientCode } = req.body;
 
-    if (!amount || !coins || !method) {
+    if (!amount || !method) {
       return res.status(400).json({ error: "Missing required fields" });
     }
 
     // Validate deposit values
     const numAmount = Number(amount);
-    const numCoins = Number(coins);
-    if (!Number.isFinite(numAmount) || numAmount <= 0 || !Number.isFinite(numCoins) || numCoins <= 0 || !Number.isInteger(numCoins)) {
+    const numCoins = numAmount; // no promotions: deposit VND == coins
+    if (!Number.isFinite(numAmount) || numAmount <= 0) {
       return res.status(400).json({ error: "Giá trị nạp không hợp lệ" });
     }
     if (numCoins > 10000000) {
@@ -151,8 +152,9 @@ router.post("/purchase", authRequired, async (req: AuthRequest, res: Response) =
       return res.status(400).json({ error: "Insufficient balance", required: chapter.price, balance: user.coinBalance });
     }
 
-    // Trừ xu reader + cộng xu tác giả (70/30 split — tác giả nhận 70%)
-    const authorShare = Math.floor(chapter.price * 0.7);
+    // Trừ xu reader + chia doanh thu (65% tác giả, 30% nền tảng, 5% thuế)
+    const split = splitRevenue(chapter.price);
+    const authorShare = split.author;
 
     // Use interactive transaction with balance guard to prevent race condition
     try {
@@ -176,6 +178,22 @@ router.post("/purchase", authRequired, async (req: AuthRequest, res: Response) =
             chapterTitle: chapter.title,
           },
         });
+
+        await tx.platformEarning.create({
+          data: {
+            type: "purchase",
+            grossAmount: split.gross,
+            authorAmount: split.author,
+            platformAmount: split.platform,
+            taxAmount: split.tax,
+            authorId: chapter.story.authorId,
+            fromUserId: user.id,
+            chapterId,
+            storyId: chapter.storyId,
+            storyTitle: chapter.story.title,
+            chapterTitle: chapter.title,
+          },
+        });
       });
     } catch (txError: any) {
       if (txError.message === "INSUFFICIENT_BALANCE") {
@@ -189,7 +207,7 @@ router.post("/purchase", authRequired, async (req: AuthRequest, res: Response) =
       data: {
         userId: chapter.story.authorId,
         title: "Có người mua chương truyện",
-        message: `Ai đó đã mua chương "${chapter.title}" trong "${chapter.story.title}" với giá ${chapter.price} xu. Bạn nhận được ${authorShare} xu.`,
+        message: `Ai đó đã mua chương "${chapter.title}" trong "${chapter.story.title}" với giá ${chapter.price} xu. Bạn nhận được ${authorShare} xu (đã trừ phí nền tảng & thuế).`,
         type: "wallet",
         link: "/write/revenue",
       },
@@ -248,19 +266,53 @@ router.post("/tip", authRequired, async (req: AuthRequest, res: Response) => {
           const updated = await tx.user.update({ where: { id: user.id }, data: { coinBalance: { decrement: amount } }, select: { coinBalance: true } });
           newBalance = updated.coinBalance;
         }
-        await tx.user.update({ where: { id: chapter.story.authorId }, data: { coinBalance: { increment: amount } } });
-        await tx.authorEarning.create({
-          data: {
-            type: "tip",
-            amount,
-            authorId: chapter.story.authorId,
-            fromUserId: user.id,
-            chapterId,
-            storyId: chapter.storyId,
-            storyTitle: chapter.story.title,
-            chapterTitle: chapter.title,
-          },
-        });
+
+        if (isAdmin) {
+          // Admin gift: full amount to author, no platform/tax
+          await tx.user.update({ where: { id: chapter.story.authorId }, data: { coinBalance: { increment: amount } } });
+          await tx.authorEarning.create({
+            data: {
+              type: "tip",
+              amount,
+              authorId: chapter.story.authorId,
+              fromUserId: user.id,
+              chapterId,
+              storyId: chapter.storyId,
+              storyTitle: chapter.story.title,
+              chapterTitle: chapter.title,
+            },
+          });
+        } else {
+          const split = splitRevenue(amount);
+          await tx.user.update({ where: { id: chapter.story.authorId }, data: { coinBalance: { increment: split.author } } });
+          await tx.authorEarning.create({
+            data: {
+              type: "tip",
+              amount: split.author,
+              authorId: chapter.story.authorId,
+              fromUserId: user.id,
+              chapterId,
+              storyId: chapter.storyId,
+              storyTitle: chapter.story.title,
+              chapterTitle: chapter.title,
+            },
+          });
+          await tx.platformEarning.create({
+            data: {
+              type: "tip",
+              grossAmount: split.gross,
+              authorAmount: split.author,
+              platformAmount: split.platform,
+              taxAmount: split.tax,
+              authorId: chapter.story.authorId,
+              fromUserId: user.id,
+              chapterId,
+              storyId: chapter.storyId,
+              storyTitle: chapter.story.title,
+              chapterTitle: chapter.title,
+            },
+          });
+        }
       });
     } catch (txError: any) {
       if (txError.message === "INSUFFICIENT_BALANCE") {
@@ -271,11 +323,12 @@ router.post("/tip", authRequired, async (req: AuthRequest, res: Response) => {
 
     // Thông báo cho tác giả
     const senderLabel = isAdmin ? "Admin VStory" : user.name;
+    const receivedLabel = isAdmin ? amount : splitRevenue(amount).author;
     prisma.notification.create({
       data: {
         userId: chapter.story.authorId,
         title: isAdmin ? "🎁 Admin đã tặng xu!" : "Bạn nhận được xu ủng hộ",
-        message: `${senderLabel} đã tặng ${amount.toLocaleString("vi-VN")} xu ủng hộ chương "${chapter.title}" trong truyện "${chapter.story.title}".`,
+        message: `${senderLabel} đã tặng ${amount.toLocaleString("vi-VN")} xu ủng hộ chương "${chapter.title}" trong truyện "${chapter.story.title}". Bạn nhận được ${receivedLabel.toLocaleString("vi-VN")} xu${isAdmin ? "" : " (đã trừ phí nền tảng & thuế)"}.`,
         type: "wallet",
         link: "/write/revenue",
       },

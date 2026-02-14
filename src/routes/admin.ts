@@ -37,10 +37,21 @@ router.get("/stats", authRequired, adminRequired, async (_req: AuthRequest, res:
         prisma.withdrawal.count({ where: { status: "pending" } }),
       ]);
 
-    const totalRevenue = await prisma.deposit.aggregate({
-      where: { status: "approved" },
-      _sum: { amount: true },
-    });
+    const [approvedDepositAmount, platformAgg] = await Promise.all([
+      prisma.deposit.aggregate({
+        where: { status: "approved" },
+        _sum: { amount: true },
+      }),
+      prisma.platformEarning.aggregate({
+        _sum: { grossAmount: true, authorAmount: true, platformAmount: true, taxAmount: true },
+      }),
+    ]);
+
+    const grossContentRevenue = platformAgg._sum.grossAmount || 0;
+    const platformGrossWallet = (platformAgg._sum.platformAmount || 0) + (platformAgg._sum.taxAmount || 0);
+    const platformNetIncome = platformAgg._sum.platformAmount || 0;
+    const taxTotal = platformAgg._sum.taxAmount || 0;
+    const authorNetPaid = platformAgg._sum.authorAmount || 0;
 
     res.json({
       totalUsers,
@@ -48,7 +59,15 @@ router.get("/stats", authRequired, adminRequired, async (_req: AuthRequest, res:
       totalChapters,
       pendingDeposits,
       pendingWithdrawals,
-      totalRevenue: totalRevenue._sum.amount || 0,
+      // Deposits (cash-in)
+      approvedDepositsAmount: approvedDepositAmount._sum.amount || 0,
+      totalRevenue: approvedDepositAmount._sum.amount || 0,
+      // Content revenue split (gross spending)
+      grossContentRevenue,
+      platformGrossWallet,
+      platformNetIncome,
+      taxTotal,
+      authorNetPaid,
     });
   } catch (error) {
     console.error("Error fetching admin stats:", error);
