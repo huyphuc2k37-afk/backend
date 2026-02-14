@@ -25,9 +25,15 @@ router.get("/:id", authOptional, async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ error: "Chapter not found" });
     }
 
-    // Block access to chapters of unapproved stories
+    // Block access to chapters of unapproved stories (allow author to still see their own)
     if (chapter.story.approvalStatus !== "approved") {
-      return res.status(403).json({ error: "Truyện chưa được duyệt" });
+      const isAuthor = req.user?.email
+        ? await prisma.user.findUnique({ where: { email: req.user.email }, select: { id: true, role: true } })
+            .then((u) => u?.id === chapter.story.authorId || u?.role === "moderator" || u?.role === "admin")
+        : false;
+      if (!isAuthor) {
+        return res.status(403).json({ error: "Truyện chưa được duyệt" });
+      }
     }
 
     // Block access to unapproved chapters (allow author to still see their own)
