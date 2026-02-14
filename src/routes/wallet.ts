@@ -61,7 +61,7 @@ router.post("/deposit", authRequired, async (req: AuthRequest, res: Response) =>
     });
     if (!user) return res.status(404).json({ error: "User not found" });
 
-    const { amount, coins, method, transferNote } = req.body;
+    const { amount, coins, method, transferNote, transferCode: clientCode } = req.body;
 
     if (!amount || !coins || !method) {
       return res.status(400).json({ error: "Missing required fields" });
@@ -77,11 +77,31 @@ router.post("/deposit", authRequired, async (req: AuthRequest, res: Response) =>
       return res.status(400).json({ error: "Số xu vượt quá giới hạn cho phép" });
     }
 
+    // Use client-provided code or generate one
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    let transferCode = "";
+    if (clientCode && typeof clientCode === "string" && /^VS[A-Z0-9]{6}$/.test(clientCode)) {
+      const exists = await prisma.deposit.findUnique({ where: { transferCode: clientCode } });
+      if (!exists) transferCode = clientCode;
+    }
+    if (!transferCode) {
+      for (let attempt = 0; attempt < 10; attempt++) {
+        let code = "VS";
+        for (let i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)];
+        const exists = await prisma.deposit.findUnique({ where: { transferCode: code } });
+        if (!exists) { transferCode = code; break; }
+      }
+    }
+    if (!transferCode) {
+      return res.status(500).json({ error: "Không thể tạo mã giao dịch, vui lòng thử lại" });
+    }
+
     const deposit = await prisma.deposit.create({
       data: {
         amount: numAmount,
         coins: numCoins,
         method,
+        transferCode,
         transferNote: transferNote || null,
         userId: user.id,
       },

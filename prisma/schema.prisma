@@ -50,6 +50,7 @@ model Deposit {
   coins         Int       // xu nhận được (bao gồm bonus)
   method        String    // "zalopay" | "agribank"
   status        String    @default("pending") // pending | approved | rejected
+  transferCode  String    @unique // mã giao dịch duy nhất (VD: VS-AB12CD)
   transferNote  String?   // nội dung chuyển khoản
   proofImage    String?   // ảnh minh chứng
   adminNote     String?   // ghi chú từ admin
