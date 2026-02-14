@@ -125,7 +125,7 @@ router.get("/users", authRequired, adminRequired, async (req: AuthRequest, res: 
 router.put("/users/:id", authRequired, adminRequired, async (req: AuthRequest, res: Response) => {
   try {
     const { role } = req.body;
-    if (!["reader", "author", "admin"].includes(role)) {
+    if (!["reader", "author", "moderator", "admin"].includes(role)) {
       return res.status(400).json({ error: "Invalid role" });
     }
     const user = await prisma.user.update({

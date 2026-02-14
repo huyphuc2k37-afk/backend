@@ -23,6 +23,7 @@ router.get("/:slug", async (req: Request, res: Response) => {
         averageRating: true,
         ratingCount: true,
         isAdult: true,
+        approvalStatus: true,
         createdAt: true,
         updatedAt: true,
         author: { select: { id: true, name: true, image: true, bio: true } },

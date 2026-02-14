@@ -18,7 +18,7 @@ model User {
   email         String    @unique
   password      String?   // hashed, null for Google OAuth users
   image         String?
-  role          String    @default("reader") // reader | author | admin
+  role          String    @default("reader") // reader | author | moderator | admin
   provider      String    @default("google") // google | email
   emailVerified Boolean   @default(false)
   bio           String?   @db.Text
@@ -99,6 +99,10 @@ model Story {
   coverImage      String?
   genre           String    // Tiên hiệp, Kiếm hiệp, etc.
   status          String    @default("ongoing") // ongoing | completed | paused
+  approvalStatus  String    @default("pending") // pending | approved | rejected
+  rejectionReason String?   // lý do từ chối (nếu rejected)
+  reviewedBy      String?   // ID moderator đã duyệt
+  reviewedAt      DateTime? // thời gian duyệt
   tags            String?   // comma-separated
   views           Int       @default(0)
   likes           Int       @default(0)
@@ -135,6 +139,7 @@ model Story {
   @@index([genre])
   @@index([updatedAt])
   @@index([status])
+  @@index([approvalStatus])
 }
 
 // ─── Chapters ────────────────────────────────────

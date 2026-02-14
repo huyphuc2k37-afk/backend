@@ -9,7 +9,7 @@ router.get("/", async (req: Request, res: Response) => {
   try {
     const { genre, status, search, sort = "updatedAt", page = "1", limit = "20" } = req.query;
 
-    const where: any = {};
+    const where: any = { approvalStatus: "approved" };
     if (genre) where.genre = genre as string;
     if (status) where.status = status as string;
     if (search) {
