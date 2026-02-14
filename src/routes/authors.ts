@@ -32,7 +32,7 @@ router.get("/:id", async (req, res: Response) => {
     }
 
     const stories = await prisma.story.findMany({
-      where: { authorId: author.id },
+      where: { authorId: author.id, approvalStatus: "approved" },
       select: {
         id: true,
         title: true,

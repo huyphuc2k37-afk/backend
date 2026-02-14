@@ -39,6 +39,11 @@ router.get("/:slug", async (req: Request, res: Response) => {
       return res.status(404).json({ error: "Story not found" });
     }
 
+    // Block public access to unapproved stories
+    if (story.approvalStatus !== "approved") {
+      return res.status(403).json({ error: "Truyện chưa được duyệt" });
+    }
+
     // Fire-and-forget view increment
     prisma.story.update({
       where: { slug },

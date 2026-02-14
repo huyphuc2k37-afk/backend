@@ -157,6 +157,12 @@ router.put("/stories/:id", authRequired, async (req: AuthRequest, res: Response)
     // Force isAdult for mature genres
     if (data.genre && isMatureGenre(data.genre)) data.isAdult = true;
 
+    // Reset to pending when author edits a rejected story (re-submit for review)
+    if (story.approvalStatus === "rejected") {
+      data.approvalStatus = "pending";
+      data.rejectionReason = null;
+    }
+
     const updated = await prisma.story.update({
       where: { id: req.params.id },
       data,

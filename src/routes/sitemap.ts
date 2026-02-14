@@ -13,11 +13,15 @@ router.get("/", async (req: Request, res: Response) => {
 
     const [stories, chapters] = await Promise.all([
       prisma.story.findMany({
+        where: { approvalStatus: "approved" },
         select: { slug: true, updatedAt: true },
         orderBy: { updatedAt: "desc" },
       }),
       prisma.chapter.findMany({
-        where: includeLocked ? undefined : { isLocked: false },
+        where: {
+          ...(includeLocked ? {} : { isLocked: false }),
+          story: { approvalStatus: "approved" },
+        },
         select: {
           id: true,
           updatedAt: true,

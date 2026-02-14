@@ -14,6 +14,7 @@ router.get("/", async (req: Request, res: Response) => {
     else orderBy = { views: "desc" };
 
     const stories = await prisma.story.findMany({
+      where: { approvalStatus: "approved" },
       orderBy,
       take: parseInt(limit as string),
       select: {
