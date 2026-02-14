@@ -12,7 +12,7 @@ router.get("/:id", async (req: Request, res: Response) => {
       where: { id },
       include: {
         story: {
-          select: { id: true, title: true, slug: true, authorId: true },
+          select: { id: true, title: true, slug: true, authorId: true, isAdult: true, genre: true },
         },
         _count: { select: { comments: true } },
       },
