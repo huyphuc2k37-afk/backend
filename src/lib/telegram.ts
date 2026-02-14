@@ -3,27 +3,67 @@
  *
  * Sends deposit/withdrawal alerts with inline approve/reject buttons.
  * Listens for callback_query updates via polling to handle button presses.
+ * Uses Node.js https module for compatibility with all Node versions.
  */
 
+import https from "https";
 import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID || "";
-const API = `https://api.telegram.org/bot${BOT_TOKEN}`;
 
 // ─── Helpers ─────────────────────────────────────
 const fmtVND = (n: number) => new Intl.NumberFormat("vi-VN").format(n);
 
-async function tgRequest(method: string, body: Record<string, any>) {
-  try {
-    const res = await fetch(`${API}/${method}`, {
+function httpsPost(url: string, body: Record<string, any>): Promise<any> {
+  return new Promise((resolve) => {
+    const payload = JSON.stringify(body);
+    const urlObj = new URL(url);
+    const options = {
+      hostname: urlObj.hostname,
+      path: urlObj.pathname + urlObj.search,
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      headers: {
+        "Content-Type": "application/json",
+        "Content-Length": Buffer.byteLength(payload),
+      },
+    };
+    const req = https.request(options, (res) => {
+      let data = "";
+      res.on("data", (chunk) => (data += chunk));
+      res.on("end", () => {
+        try { resolve(JSON.parse(data)); } catch { resolve(null); }
+      });
     });
-    return await res.json();
+    req.on("error", (err) => {
+      console.error("[Telegram] https request error:", err.message);
+      resolve(null);
+    });
+    req.write(payload);
+    req.end();
+  });
+}
+
+function httpsGet(url: string): Promise<any> {
+  return new Promise((resolve) => {
+    https.get(url, (res) => {
+      let data = "";
+      res.on("data", (chunk) => (data += chunk));
+      res.on("end", () => {
+        try { resolve(JSON.parse(data)); } catch { resolve(null); }
+      });
+    }).on("error", (err) => {
+      console.error("[Telegram] https get error:", err.message);
+      resolve(null);
+    });
+  });
+}
+
+async function tgPost(method: string, body: Record<string, any>) {
+  try {
+    return await httpsPost(`https://api.telegram.org/bot${BOT_TOKEN}/${method}`, body);
   } catch (err) {
     console.error(`[Telegram] ${method} failed:`, err);
     return null;
@@ -44,12 +84,12 @@ export async function sendTelegramMessage(
   if (inlineKeyboard) {
     body.reply_markup = { inline_keyboard: inlineKeyboard };
   }
-  return tgRequest("sendMessage", body);
+  return tgPost("sendMessage", body);
 }
 
 // ─── Edit message (remove buttons after action) ──
 async function editMessageText(chatId: string | number, messageId: number, text: string) {
-  return tgRequest("editMessageText", {
+  return tgPost("editMessageText", {
     chat_id: chatId,
     message_id: messageId,
     text,
@@ -59,7 +99,7 @@ async function editMessageText(chatId: string | number, messageId: number, text:
 
 // ─── Answer callback query ───────────────────────
 async function answerCallbackQuery(callbackQueryId: string, text: string) {
-  return tgRequest("answerCallbackQuery", {
+  return tgPost("answerCallbackQuery", {
     callback_query_id: callbackQueryId,
     text,
     show_alert: true,
@@ -307,13 +347,11 @@ export function startTelegramPolling() {
   const poll = async () => {
     while (pollingActive) {
       try {
-        const res = await fetch(
-          `${API}/getUpdates?offset=${lastUpdateId + 1}&timeout=30&allowed_updates=["callback_query"]`,
-          { signal: AbortSignal.timeout(35000) }
+        const data: any = await httpsGet(
+          `https://api.telegram.org/bot${BOT_TOKEN}/getUpdates?offset=${lastUpdateId + 1}&timeout=30&allowed_updates=["callback_query"]`
         );
-        const data: any = await res.json();
 
-        if (data.ok && Array.isArray(data.result)) {
+        if (data && data.ok && Array.isArray(data.result)) {
           for (const update of data.result) {
             lastUpdateId = update.update_id;
 
@@ -332,11 +370,9 @@ export function startTelegramPolling() {
           }
         }
       } catch (err: any) {
-        if (err?.name !== "TimeoutError" && err?.name !== "AbortError") {
-          console.error("[Telegram] Polling error:", err);
-          // Wait a bit before retrying on real errors
-          await new Promise((r) => setTimeout(r, 5000));
-        }
+        console.error("[Telegram] Polling error:", err?.message || err);
+        // Wait a bit before retrying on real errors
+        await new Promise((r) => setTimeout(r, 5000));
       }
     }
   };
