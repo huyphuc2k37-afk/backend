@@ -533,4 +533,55 @@ router.post("/notifications/broadcast", authRequired, adminRequired, async (req:
   }
 });
 
+// ─── POST /api/admin/notifications/send — gửi thông báo cá nhân ──
+router.post("/notifications/send", authRequired, adminRequired, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = (req.body?.userId as string | undefined)?.trim();
+    const title = (req.body?.title as string | undefined)?.trim();
+    const message = (req.body?.message as string | undefined)?.trim();
+    const link = (req.body?.link as string | undefined)?.trim() || null;
+
+    if (!userId || !title || !message) {
+      return res.status(400).json({ error: "userId, title and message are required" });
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, name: true } });
+    if (!user) return res.status(404).json({ error: "Người dùng không tồn tại" });
+
+    const notification = await prisma.notification.create({
+      data: { userId, type: "admin", title, message, link },
+    });
+
+    res.json({ success: true, notification, userName: user.name });
+  } catch (error) {
+    console.error("Error sending notification:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ─── GET /api/admin/users/search — tìm kiếm nhanh user cho autocomplete ──
+router.get("/users/search", authRequired, adminRequired, async (req: AuthRequest, res: Response) => {
+  try {
+    const q = (req.query.q as string) || "";
+    if (q.length < 1) return res.json([]);
+
+    const users = await prisma.user.findMany({
+      where: {
+        OR: [
+          { name: { contains: q, mode: "insensitive" } },
+          { email: { contains: q, mode: "insensitive" } },
+        ],
+      },
+      select: { id: true, name: true, email: true, role: true, image: true },
+      take: 10,
+      orderBy: { name: "asc" },
+    });
+
+    res.json(users);
+  } catch (error) {
+    console.error("Error searching users:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 export default router;
