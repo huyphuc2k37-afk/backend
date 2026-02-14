@@ -58,7 +58,7 @@ router.get("/", authRequired, async (req: AuthRequest, res: Response) => {
 router.get("/test-telegram", async (_req: any, res: Response) => {
   console.log("[DEBUG] /api/wallet/test-telegram HIT");
   try {
-    await notifyNewDeposit({
+    const tgResult = await notifyNewDeposit({
       id: "test-" + Date.now(),
       amount: 10000,
       coins: 10,
@@ -70,7 +70,7 @@ router.get("/test-telegram", async (_req: any, res: Response) => {
       userId: "test",
       user: { name: "Test User", email: "test@test.com" },
     } as any);
-    res.json({ ok: true, message: "Telegram test sent" });
+    res.json({ ok: true, message: "Telegram test attempted", tgResult });
   } catch (err: any) {
     console.error("[DEBUG] test-telegram error:", err);
     res.status(500).json({ ok: false, error: err.message });
@@ -81,6 +81,7 @@ router.get("/test-telegram", async (_req: any, res: Response) => {
 router.post("/deposit", authRequired, async (req: AuthRequest, res: Response) => {
   try {
     console.log("[DEBUG] POST /api/wallet/deposit HIT — body:", JSON.stringify(req.body));
+    const debugTelegram = req.header("x-debug-telegram") === "1";
     const user = await prisma.user.findUnique({
       where: { email: req.user!.email },
     });
@@ -133,11 +134,23 @@ router.post("/deposit", authRequired, async (req: AuthRequest, res: Response) =>
       },
     });
 
+    if (debugTelegram) {
+      const tgResult = await notifyNewDeposit({
+        ...deposit,
+        user: { name: user.name, email: user.email },
+      } as any).catch((err) => {
+        console.error("[Telegram] notifyNewDeposit error:", err);
+        return { ok: false, error: err?.message || String(err) };
+      });
+      res.json({ ...deposit, _debug: { telegram: tgResult } });
+      return;
+    }
+
     // Notify admin via Telegram (fire-and-forget)
     notifyNewDeposit({
       ...deposit,
       user: { name: user.name, email: user.email },
-    }).catch((err) => console.error("[Telegram] notifyNewDeposit error:", err));
+    } as any).catch((err) => console.error("[Telegram] notifyNewDeposit error:", err));
 
     res.json(deposit);
   } catch (error) {

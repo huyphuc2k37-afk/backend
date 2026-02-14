@@ -80,7 +80,7 @@ export async function sendTelegramMessage(
 ) {
   if (!BOT_TOKEN || !CHAT_ID) {
     console.log("[Telegram] sendTelegramMessage skipped: no token/chatId", { BOT_TOKEN: BOT_TOKEN ? "set" : "empty", CHAT_ID: CHAT_ID ? "set" : "empty" });
-    return;
+    return { ok: false, skipped: true, reason: "missing_token_or_chat_id" };
   }
   const body: Record<string, any> = {
     chat_id: CHAT_ID,
@@ -137,7 +137,7 @@ export async function notifyNewDeposit(deposit: {
     (deposit.transferNote ? `📝 Nội dung CK: <code>${deposit.transferNote}</code>\n` : "") +
     `\n🆔 ID: <code>${deposit.id}</code>`;
 
-  await sendTelegramMessage(text, [
+  return sendTelegramMessage(text, [
     [
       { text: "✅ Duyệt", callback_data: `approve_deposit_${deposit.id}` },
       { text: "❌ Từ chối", callback_data: `reject_deposit_${deposit.id}` },
