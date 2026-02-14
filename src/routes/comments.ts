@@ -154,13 +154,15 @@ router.post("/", authRequired, async (req: AuthRequest, res: Response) => {
         select: { userId: true },
       });
       if (parentComment && parentComment.userId !== user.id) {
+        // Get story slug for notification link
+        const storyForLink = await prisma.story.findUnique({ where: { id: finalStoryId }, select: { slug: true } });
         prisma.notification.create({
           data: {
             userId: parentComment.userId,
             title: "Trả lời bình luận",
             message: `${user.name} đã trả lời bình luận của bạn.`,
             type: "system",
-            link: `/story/${finalStoryId}`,
+            link: `/story/${storyForLink?.slug || finalStoryId}`,
           },
         }).catch(() => {});
       }
@@ -228,7 +230,7 @@ router.delete("/:id", authRequired, async (req: AuthRequest, res: Response) => {
 
     const comment = await prisma.comment.findUnique({ where: { id: req.params.id } });
     if (!comment) return res.status(404).json({ error: "Comment not found" });
-    if (comment.userId !== user.id && user.role !== "admin") {
+    if (comment.userId !== user.id && user.role !== "admin" && user.role !== "moderator") {
       return res.status(403).json({ error: "Không có quyền xóa bình luận này" });
     }
 

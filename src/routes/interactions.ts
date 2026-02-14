@@ -11,6 +11,13 @@ router.post("/:id/like", authRequired, async (req: AuthRequest, res: Response) =
     if (!user) return res.status(404).json({ error: "User not found" });
 
     const storyId = req.params.id;
+
+    // Only allow liking approved stories
+    const story = await prisma.story.findUnique({ where: { id: storyId }, select: { approvalStatus: true } });
+    if (!story || story.approvalStatus !== "approved") {
+      return res.status(403).json({ error: "Truyện chưa được duyệt" });
+    }
+
     const existing = await prisma.storyLike.findUnique({
       where: { userId_storyId: { userId: user.id, storyId } },
     });
@@ -65,6 +72,12 @@ router.post("/:id/rate", authRequired, async (req: AuthRequest, res: Response) =
     }
 
     const storyId = req.params.id;
+
+    // Only allow rating approved stories
+    const story = await prisma.story.findUnique({ where: { id: storyId }, select: { approvalStatus: true } });
+    if (!story || story.approvalStatus !== "approved") {
+      return res.status(403).json({ error: "Truyện chưa được duyệt" });
+    }
 
     // Upsert rating
     await prisma.rating.upsert({

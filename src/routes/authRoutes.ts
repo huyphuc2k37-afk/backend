@@ -201,6 +201,12 @@ router.post("/resend", async (req: Request, res: Response) => {
 // ─── POST /api/auth/sync — sync/upsert Google user and return role ──
 router.post("/sync", async (req: Request, res: Response) => {
   try {
+    // Verify shared secret — only NextAuth server-side can call this
+    const syncSecret = req.headers["x-sync-secret"];
+    if (!syncSecret || syncSecret !== process.env.NEXTAUTH_SECRET) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+
     const { email, name, image } = req.body;
     if (!email) return res.status(400).json({ error: "Email required" });
 

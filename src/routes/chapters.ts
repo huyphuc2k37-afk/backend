@@ -12,7 +12,7 @@ router.get("/:id", async (req: Request, res: Response) => {
       where: { id },
       include: {
         story: {
-          select: { id: true, title: true, slug: true, authorId: true, isAdult: true, genre: true },
+          select: { id: true, title: true, slug: true, authorId: true, isAdult: true, genre: true, approvalStatus: true },
         },
         _count: { select: { comments: true } },
       },
@@ -20,6 +20,11 @@ router.get("/:id", async (req: Request, res: Response) => {
 
     if (!chapter) {
       return res.status(404).json({ error: "Chapter not found" });
+    }
+
+    // Block access to chapters of unapproved stories
+    if (chapter.story.approvalStatus !== "approved") {
+      return res.status(403).json({ error: "Truyện chưa được duyệt" });
     }
 
     // Get prev/next chapters

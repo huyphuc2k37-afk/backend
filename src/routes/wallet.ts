@@ -67,10 +67,20 @@ router.post("/deposit", authRequired, async (req: AuthRequest, res: Response) =>
       return res.status(400).json({ error: "Missing required fields" });
     }
 
+    // Validate deposit values
+    const numAmount = Number(amount);
+    const numCoins = Number(coins);
+    if (!Number.isFinite(numAmount) || numAmount <= 0 || !Number.isFinite(numCoins) || numCoins <= 0 || !Number.isInteger(numCoins)) {
+      return res.status(400).json({ error: "Giá trị nạp không hợp lệ" });
+    }
+    if (numCoins > 10000000) {
+      return res.status(400).json({ error: "Số xu vượt quá giới hạn cho phép" });
+    }
+
     const deposit = await prisma.deposit.create({
       data: {
-        amount,
-        coins,
+        amount: numAmount,
+        coins: numCoins,
         method,
         transferNote: transferNote || null,
         userId: user.id,
@@ -117,39 +127,35 @@ router.post("/purchase", authRequired, async (req: AuthRequest, res: Response) =
     // Trừ xu reader + cộng xu tác giả (70/30 split — tác giả nhận 70%)
     const authorShare = Math.floor(chapter.price * 0.7);
 
-    await prisma.$transaction([
-      // Trừ xu người mua
-      prisma.user.update({
-        where: { id: user.id },
-        data: { coinBalance: { decrement: chapter.price } },
-      }),
-      // Cộng xu cho tác giả
-      prisma.user.update({
-        where: { id: chapter.story.authorId },
-        data: { coinBalance: { increment: authorShare } },
-      }),
-      // Ghi nhận giao dịch mua
-      prisma.chapterPurchase.create({
-        data: {
-          userId: user.id,
-          chapterId,
-          coins: chapter.price,
-        },
-      }),
-      // Ghi nhận doanh thu tác giả
-      prisma.authorEarning.create({
-        data: {
-          type: "purchase",
-          amount: authorShare,
-          authorId: chapter.story.authorId,
-          fromUserId: user.id,
-          chapterId,
-          storyId: chapter.storyId,
-          storyTitle: chapter.story.title,
-          chapterTitle: chapter.title,
-        },
-      }),
-    ]);
+    // Use interactive transaction with balance guard to prevent race condition
+    try {
+      await prisma.$transaction(async (tx) => {
+        const freshUser = await tx.user.findUnique({ where: { id: user.id }, select: { coinBalance: true } });
+        if (!freshUser || freshUser.coinBalance < chapter.price) {
+          throw new Error("INSUFFICIENT_BALANCE");
+        }
+        await tx.user.update({ where: { id: user.id }, data: { coinBalance: { decrement: chapter.price } } });
+        await tx.user.update({ where: { id: chapter.story.authorId }, data: { coinBalance: { increment: authorShare } } });
+        await tx.chapterPurchase.create({ data: { userId: user.id, chapterId, coins: chapter.price } });
+        await tx.authorEarning.create({
+          data: {
+            type: "purchase",
+            amount: authorShare,
+            authorId: chapter.story.authorId,
+            fromUserId: user.id,
+            chapterId,
+            storyId: chapter.storyId,
+            storyTitle: chapter.story.title,
+            chapterTitle: chapter.title,
+          },
+        });
+      });
+    } catch (txError: any) {
+      if (txError.message === "INSUFFICIENT_BALANCE") {
+        return res.status(400).json({ error: "Insufficient balance", required: chapter.price, balance: user.coinBalance });
+      }
+      throw txError;
+    }
 
     // Thông báo cho tác giả (fire-and-forget)
     prisma.notification.create({
@@ -162,7 +168,9 @@ router.post("/purchase", authRequired, async (req: AuthRequest, res: Response) =
       },
     }).catch(() => {});
 
-    res.json({ success: true, spent: chapter.price, newBalance: user.coinBalance - chapter.price });
+    // Get fresh balance after transaction
+    const freshUser = await prisma.user.findUnique({ where: { id: user.id }, select: { coinBalance: true } });
+    res.json({ success: true, spent: chapter.price, newBalance: freshUser?.coinBalance ?? (user.coinBalance - chapter.price) });
   } catch (error) {
     console.error("Error purchasing chapter:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -202,42 +210,37 @@ router.post("/tip", authRequired, async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ error: "Không đủ xu", required: amount, balance: user.coinBalance });
     }
 
-    const txOps: any[] = [];
-    if (!isAdmin) {
-      txOps.push(
-        prisma.user.update({
-          where: { id: user.id },
-          data: { coinBalance: { decrement: amount } },
-          select: { coinBalance: true, id: true },
-        })
-      );
+    let newBalance = user.coinBalance;
+    try {
+      await prisma.$transaction(async (tx) => {
+        if (!isAdmin) {
+          const freshUser = await tx.user.findUnique({ where: { id: user.id }, select: { coinBalance: true } });
+          if (!freshUser || freshUser.coinBalance < amount) {
+            throw new Error("INSUFFICIENT_BALANCE");
+          }
+          const updated = await tx.user.update({ where: { id: user.id }, data: { coinBalance: { decrement: amount } }, select: { coinBalance: true } });
+          newBalance = updated.coinBalance;
+        }
+        await tx.user.update({ where: { id: chapter.story.authorId }, data: { coinBalance: { increment: amount } } });
+        await tx.authorEarning.create({
+          data: {
+            type: "tip",
+            amount,
+            authorId: chapter.story.authorId,
+            fromUserId: user.id,
+            chapterId,
+            storyId: chapter.storyId,
+            storyTitle: chapter.story.title,
+            chapterTitle: chapter.title,
+          },
+        });
+      });
+    } catch (txError: any) {
+      if (txError.message === "INSUFFICIENT_BALANCE") {
+        return res.status(400).json({ error: "Không đủ xu", required: amount, balance: user.coinBalance });
+      }
+      throw txError;
     }
-    txOps.push(
-      prisma.user.update({
-        where: { id: chapter.story.authorId },
-        data: { coinBalance: { increment: amount } },
-        select: { id: true },
-      })
-    );
-
-    // Ghi nhận doanh thu tác giả (tip)
-    txOps.push(
-      prisma.authorEarning.create({
-        data: {
-          type: "tip",
-          amount,
-          authorId: chapter.story.authorId,
-          fromUserId: user.id,
-          chapterId,
-          storyId: chapter.storyId,
-          storyTitle: chapter.story.title,
-          chapterTitle: chapter.title,
-        },
-      })
-    );
-
-    const results = await prisma.$transaction(txOps);
-    const newBalance = isAdmin ? user.coinBalance : results[0].coinBalance;
 
     // Thông báo cho tác giả
     const senderLabel = isAdmin ? "Admin VStory" : user.name;

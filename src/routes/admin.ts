@@ -238,6 +238,7 @@ router.get("/stories", authRequired, adminRequired, async (req: AuthRequest, res
           views: true,
           likes: true,
           isAdult: true,
+          approvalStatus: true,
           createdAt: true,
           updatedAt: true,
           author: { select: { id: true, name: true, email: true } },

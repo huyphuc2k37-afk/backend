@@ -92,43 +92,4 @@ router.get("/:id/cover", async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/stories — create a new story
-router.post("/", async (req: Request, res: Response) => {
-  try {
-    const { title, slug, description, coverImage, genre, tags, authorEmail } = req.body;
-
-    if (!title || !slug || !description || !genre || !authorEmail) {
-      return res.status(400).json({ error: "Missing required fields" });
-    }
-
-    const author = await prisma.user.findUnique({ where: { email: authorEmail } });
-    if (!author) {
-      return res.status(404).json({ error: "Author not found" });
-    }
-
-    const story = await prisma.story.create({
-      data: {
-        title,
-        slug,
-        description,
-        coverImage: coverImage ? await compressBase64Image(coverImage) : undefined,
-        genre,
-        tags,
-        authorId: author.id,
-      },
-      include: {
-        author: { select: { id: true, name: true, image: true } },
-      },
-    });
-
-    res.status(201).json(story);
-  } catch (error: any) {
-    if (error.code === "P2002") {
-      return res.status(409).json({ error: "Slug already exists" });
-    }
-    console.error("Error creating story:", error);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
-
 export default router;

@@ -11,7 +11,7 @@ router.get("/", authRequired, async (req: AuthRequest, res: Response) => {
       where: { email: req.user!.email },
       include: {
         stories: {
-          select: { id: true, title: true, slug: true, views: true, likes: true, status: true, createdAt: true },
+          select: { id: true, title: true, slug: true, views: true, likes: true, status: true, approvalStatus: true, createdAt: true },
           orderBy: { updatedAt: "desc" },
         },
         _count: { select: { stories: true, bookmarks: true, comments: true } },
@@ -28,7 +28,7 @@ router.get("/", authRequired, async (req: AuthRequest, res: Response) => {
         },
         include: {
           stories: {
-            select: { id: true, title: true, slug: true, views: true, likes: true, status: true, createdAt: true },
+            select: { id: true, title: true, slug: true, views: true, likes: true, status: true, approvalStatus: true, createdAt: true },
             orderBy: { updatedAt: "desc" },
           },
           _count: { select: { stories: true, bookmarks: true, comments: true } },
@@ -59,8 +59,8 @@ router.put("/", authRequired, async (req: AuthRequest, res: Response) => {
     if (bio !== undefined) data.bio = bio;
     if (image !== undefined) data.image = image;
     if (role === "author") {
-      if (existing.role === "admin") {
-        return res.status(400).json({ error: "Already an admin" });
+      if (existing.role === "admin" || existing.role === "moderator") {
+        return res.status(400).json({ error: "Không thể thay đổi vai trò hiện tại" });
       }
       if (existing.role === "author") {
         return res.status(400).json({ error: "Already an author" });
