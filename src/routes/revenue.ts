@@ -2,6 +2,8 @@ import { Router, Response } from "express";
 import prisma from "../lib/prisma";
 import { AuthRequest, authRequired } from "../middleware/auth";
 import { notifyNewWithdrawal } from "../lib/telegram";
+import { splitRevenue } from "../lib/revenueSplit";
+import type { PrismaClient as GeneratedPrismaClient } from ".prisma/client";
 
 const router = Router();
 
@@ -232,6 +234,8 @@ router.post("/migrate", authRequired, async (req: AuthRequest, res: Response) =>
     const user = await prisma.user.findUnique({ where: { email: req.user!.email } });
     if (!user || user.role !== "admin") return res.status(403).json({ error: "Admin only" });
 
+    const prismaWithPlatform = prisma as unknown as GeneratedPrismaClient;
+
     const allPurchases = await prisma.chapterPurchase.findMany({
       include: {
         chapter: {
@@ -245,6 +249,8 @@ router.post("/migrate", authRequired, async (req: AuthRequest, res: Response) =>
 
     let migrated = 0;
     for (const p of allPurchases) {
+      const split = splitRevenue(p.coins);
+
       const exists = await prisma.authorEarning.findFirst({
         where: {
           authorId: p.chapter.story.authorId,
@@ -253,22 +259,58 @@ router.post("/migrate", authRequired, async (req: AuthRequest, res: Response) =>
           type: "purchase",
         },
       });
-      if (!exists) {
-        await prisma.authorEarning.create({
-          data: {
-            type: "purchase",
-            amount: Math.floor(p.coins * 0.7),
-            authorId: p.chapter.story.authorId,
-            fromUserId: p.userId,
-            chapterId: p.chapterId,
-            storyId: p.chapter.storyId,
-            storyTitle: p.chapter.story.title,
-            chapterTitle: p.chapter.title,
-            createdAt: p.createdAt,
-          },
-        });
-        migrated++;
-      }
+
+      const platformExists = await prismaWithPlatform.platformEarning.findFirst({
+        where: {
+          type: "purchase",
+          chapterId: p.chapterId,
+          fromUserId: p.userId,
+        },
+      });
+
+      if (exists && platformExists) continue;
+
+      await prisma.$transaction([
+        ...(exists
+          ? []
+          : [
+              prisma.authorEarning.create({
+                data: {
+                  type: "purchase",
+                  amount: split.author,
+                  authorId: p.chapter.story.authorId,
+                  fromUserId: p.userId,
+                  chapterId: p.chapterId,
+                  storyId: p.chapter.storyId,
+                  storyTitle: p.chapter.story.title,
+                  chapterTitle: p.chapter.title,
+                  createdAt: p.createdAt,
+                },
+              }),
+            ]),
+        ...(platformExists
+          ? []
+          : [
+              prismaWithPlatform.platformEarning.create({
+                data: {
+                  type: "purchase",
+                  grossAmount: split.gross,
+                  authorAmount: split.author,
+                  platformAmount: split.platform,
+                  taxAmount: split.tax,
+                  authorId: p.chapter.story.authorId,
+                  fromUserId: p.userId,
+                  chapterId: p.chapterId,
+                  storyId: p.chapter.storyId,
+                  storyTitle: p.chapter.story.title,
+                  chapterTitle: p.chapter.title,
+                  createdAt: p.createdAt,
+                },
+              }),
+            ]),
+      ]);
+
+      migrated++;
     }
 
     res.json({ success: true, migrated, total: allPurchases.length });
