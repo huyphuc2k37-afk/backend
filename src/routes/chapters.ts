@@ -1,10 +1,13 @@
 import { Router, Request, Response } from "express";
 import prisma from "../lib/prisma";
+import { AuthRequest, authOptional } from "../middleware/auth";
 
 const router = Router();
 
 // GET /api/chapters/:id — get chapter content
-router.get("/:id", async (req: Request, res: Response) => {
+// Free chapters: accessible to everyone
+// Locked chapters: require auth + purchase (or be the author)
+router.get("/:id", authOptional, async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -39,7 +42,55 @@ router.get("/:id", async (req: Request, res: Response) => {
       }),
     ]);
 
-    res.json({ ...chapter, prev, next });
+    // If chapter is free, return full content to everyone
+    if (!chapter.isLocked || chapter.price === 0) {
+      return res.json({ ...chapter, prev, next });
+    }
+
+    // ─── Locked chapter: check auth + purchase ───
+    if (!req.user) {
+      // Not logged in — return chapter metadata without content
+      return res.json({
+        ...chapter,
+        content: "",
+        prev,
+        next,
+        requiresLogin: true,
+      });
+    }
+
+    // Get user from DB
+    const user = await prisma.user.findUnique({
+      where: { email: req.user.email },
+      select: { id: true },
+    });
+    if (!user) {
+      return res.json({ ...chapter, content: "", prev, next, requiresLogin: true });
+    }
+
+    // Author can always read their own chapters
+    if (user.id === chapter.story.authorId) {
+      return res.json({ ...chapter, prev, next });
+    }
+
+    // Check if user has purchased this chapter
+    const purchase = await prisma.chapterPurchase.findUnique({
+      where: { userId_chapterId: { userId: user.id, chapterId: chapter.id } },
+    });
+
+    if (purchase) {
+      // Already purchased — return full content
+      return res.json({ ...chapter, prev, next });
+    }
+
+    // Not purchased — return metadata without content
+    return res.json({
+      ...chapter,
+      content: "",
+      prev,
+      next,
+      requiresPurchase: true,
+    });
   } catch (error) {
     console.error("Error fetching chapter:", error);
     res.status(500).json({ error: "Internal server error" });
