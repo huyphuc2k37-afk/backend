@@ -5,6 +5,12 @@ import { compressBase64Image } from "../lib/compressImage";
 
 const router = Router();
 
+/** Genres that require adult content flag */
+const MATURE_GENRES = ["bdsm", "truyện có yếu tố 16+"];
+function isMatureGenre(genre: string): boolean {
+  return MATURE_GENRES.some((m) => genre.toLowerCase() === m);
+}
+
 // ─── GET /api/manage/stories — danh sách truyện của tác giả ──
 router.get("/stories", authRequired, async (req: AuthRequest, res: Response) => {
   try {
@@ -101,7 +107,7 @@ router.post("/stories", authRequired, async (req: AuthRequest, res: Response) =>
         title, slug, description, coverImage: compressedCover, genre, tags,
         theme, expectedChapters: expectedChapters ? parseInt(expectedChapters) : null,
         worldBuilding, characters, plotOutline,
-        targetAudience, postSchedule, isAdult: isAdult || false,
+        targetAudience, postSchedule, isAdult: (isAdult || false) || isMatureGenre(genre),
         authorId: user.id,
       },
     });
@@ -143,6 +149,8 @@ router.put("/stories/:id", authRequired, async (req: AuthRequest, res: Response)
     if (targetAudience !== undefined) data.targetAudience = targetAudience;
     if (postSchedule !== undefined) data.postSchedule = postSchedule;
     if (isAdult !== undefined) data.isAdult = isAdult;
+    // Force isAdult for mature genres
+    if (data.genre && isMatureGenre(data.genre)) data.isAdult = true;
 
     const updated = await prisma.story.update({
       where: { id: req.params.id },
