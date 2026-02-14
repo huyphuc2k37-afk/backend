@@ -15,7 +15,7 @@ router.get("/:id", authOptional, async (req: AuthRequest, res: Response) => {
       where: { id },
       include: {
         story: {
-          select: { id: true, title: true, slug: true, authorId: true, isAdult: true, genre: true, approvalStatus: true },
+          select: { id: true, title: true, slug: true, authorId: true, isAdult: true, genre: true, tags: true, approvalStatus: true },
         },
         _count: { select: { comments: true } },
       },
