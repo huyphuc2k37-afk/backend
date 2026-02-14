@@ -54,39 +54,13 @@ router.get("/", authRequired, async (req: AuthRequest, res: Response) => {
   }
 });
 
-// ─── GET /api/wallet/test-telegram — test gửi Telegram từ Render ──
-router.get("/test-telegram", async (_req: any, res: Response) => {
-  console.log("[DEBUG] /api/wallet/test-telegram HIT");
-  try {
-    const tgResult = await notifyNewDeposit({
-      id: "test-" + Date.now(),
-      amount: 10000,
-      coins: 10,
-      method: "bank",
-      transferCode: "TEST123",
-      transferNote: "Test from Render",
-      status: "pending",
-      createdAt: new Date(),
-      userId: "test",
-      user: { name: "Test User", email: "test@test.com" },
-    } as any);
-    res.json({ ok: true, message: "Telegram test attempted", tgResult });
-  } catch (err: any) {
-    console.error("[DEBUG] test-telegram error:", err);
-    res.status(500).json({ ok: false, error: err.message });
-  }
-});
-
 // ─── POST /api/wallet/deposit — tạo yêu cầu nạp xu ──
 router.post("/deposit", authRequired, async (req: AuthRequest, res: Response) => {
   try {
-    console.log("[DEBUG] POST /api/wallet/deposit HIT — body:", JSON.stringify(req.body));
-    const debugTelegram = req.header("x-debug-telegram") === "1";
     const user = await prisma.user.findUnique({
       where: { email: req.user!.email },
     });
     if (!user) return res.status(404).json({ error: "User not found" });
-    console.log("[DEBUG] deposit user found:", user.email);
 
     const { amount, coins, method, transferNote, transferCode: clientCode } = req.body;
 
@@ -133,18 +107,6 @@ router.post("/deposit", authRequired, async (req: AuthRequest, res: Response) =>
         userId: user.id,
       },
     });
-
-    if (debugTelegram) {
-      const tgResult = await notifyNewDeposit({
-        ...deposit,
-        user: { name: user.name, email: user.email },
-      } as any).catch((err) => {
-        console.error("[Telegram] notifyNewDeposit error:", err);
-        return { ok: false, error: err?.message || String(err) };
-      });
-      res.json({ ...deposit, _debug: { telegram: tgResult } });
-      return;
-    }
 
     // Notify admin via Telegram (fire-and-forget)
     notifyNewDeposit({
