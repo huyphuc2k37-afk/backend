@@ -1,6 +1,7 @@
 import { Router, Response } from "express";
 import prisma from "../lib/prisma";
 import { AuthRequest, authRequired } from "../middleware/auth";
+import { notifyNewWithdrawal } from "../lib/telegram";
 
 const router = Router();
 
@@ -211,6 +212,12 @@ router.post("/withdraw", authRequired, async (req: AuthRequest, res: Response) =
         data: { coinBalance: { decrement: amount } },
       }),
     ]);
+
+    // Notify admin via Telegram (fire-and-forget)
+    notifyNewWithdrawal({
+      ...withdrawal,
+      user: { name: user.name, email: user.email },
+    }).catch(() => {});
 
     res.json(withdrawal);
   } catch (error) {

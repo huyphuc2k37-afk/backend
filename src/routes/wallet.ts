@@ -1,6 +1,7 @@
 import { Router, Response } from "express";
 import prisma from "../lib/prisma";
 import { AuthRequest, authRequired } from "../middleware/auth";
+import { notifyNewDeposit } from "../lib/telegram";
 
 const router = Router();
 
@@ -106,6 +107,12 @@ router.post("/deposit", authRequired, async (req: AuthRequest, res: Response) =>
         userId: user.id,
       },
     });
+
+    // Notify admin via Telegram (fire-and-forget)
+    notifyNewDeposit({
+      ...deposit,
+      user: { name: user.name, email: user.email },
+    }).catch(() => {});
 
     res.json(deposit);
   } catch (error) {
