@@ -23,7 +23,8 @@ export function authRequired(req: AuthRequest, res: Response, next: NextFunction
   const token = authHeader.split(" ")[1];
 
   try {
-    const secret = process.env.NEXTAUTH_SECRET!;
+    const secret = process.env.NEXTAUTH_SECRET;
+    if (!secret) return res.status(500).json({ error: "Server misconfigured" });
     const decoded = jwt.verify(token, secret) as any;
     req.user = {
       email: decoded.email,
@@ -48,7 +49,8 @@ export function authOptional(req: AuthRequest, res: Response, next: NextFunction
 
   const token = authHeader.split(" ")[1];
   try {
-    const secret = process.env.NEXTAUTH_SECRET!;
+    const secret = process.env.NEXTAUTH_SECRET;
+    if (!secret) return next();
     const decoded = jwt.verify(token, secret) as any;
     req.user = {
       email: decoded.email,

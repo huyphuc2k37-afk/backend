@@ -7,14 +7,16 @@ const router = Router();
 // ─── Auto-cleanup notifications older than 3 days ──
 const NOTIFICATION_TTL_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
 
+let cleanupTimer: ReturnType<typeof setInterval> | null = null;
+
 async function cleanupOldNotifications() {
   try {
     const cutoff = new Date(Date.now() - NOTIFICATION_TTL_MS);
     const result = await prisma.notification.deleteMany({
-      where: { createdAt: { lt: cutoff } },
+      where: { createdAt: { lt: cutoff }, isRead: true },
     });
     if (result.count > 0) {
-      console.log(`🧹 Cleaned up ${result.count} old notifications (>3 days)`);
+      console.log(`🧹 Cleaned up ${result.count} old read notifications (>3 days)`);
     }
   } catch (error) {
     console.error("Error cleaning up old notifications:", error);
@@ -22,7 +24,7 @@ async function cleanupOldNotifications() {
 }
 
 // Run cleanup every 6 hours
-setInterval(cleanupOldNotifications, 6 * 60 * 60 * 1000);
+cleanupTimer = setInterval(cleanupOldNotifications, 6 * 60 * 60 * 1000);
 // Run once on startup (after 10s delay)
 setTimeout(cleanupOldNotifications, 10_000);
 

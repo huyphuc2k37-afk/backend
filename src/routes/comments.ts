@@ -103,6 +103,9 @@ router.post("/", authRequired, async (req: AuthRequest, res: Response) => {
     if (!content?.trim()) {
       return res.status(400).json({ error: "Nội dung bình luận không được để trống" });
     }
+    if (content.trim().length > 2000) {
+      return res.status(400).json({ error: "Bình luận tối đa 2000 ký tự" });
+    }
     if (!storyId && !chapterId && !parentId) {
       return res.status(400).json({ error: "storyId, chapterId, hoặc parentId là bắt buộc" });
     }

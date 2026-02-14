@@ -63,6 +63,9 @@ router.post("/:id/gift", authRequired, async (req: AuthRequest, res: Response) =
     if (!Number.isFinite(coins) || !Number.isInteger(coins) || coins <= 0) {
       return res.status(400).json({ error: "Coins must be a positive integer" });
     }
+    if (coins > 100000) {
+      return res.status(400).json({ error: "Tối đa 100,000 xu mỗi lần tặng" });
+    }
 
     const [sender, author] = await Promise.all([
       prisma.user.findUnique({ where: { email: req.user!.email } }),

@@ -142,7 +142,8 @@ router.post("/login", async (req: Request, res: Response) => {
     }
 
     // Create JWT token (same format as NextAuth accessToken)
-    const secret = process.env.NEXTAUTH_SECRET!;
+    const secret = process.env.NEXTAUTH_SECRET;
+    if (!secret) return res.status(500).json({ error: "Server misconfigured" });
     const accessToken = jwt.sign(
       {
         sub: user.id,

@@ -70,6 +70,10 @@ router.put("/stats/revenue", authRequired, adminRequired, async (req: AuthReques
     }
 
     if (action === "reset-all") {
+      // Require explicit confirmation param to prevent accidental mass deletion
+      if (req.body.confirm !== "CONFIRM_RESET_ALL") {
+        return res.status(400).json({ error: "Vui lòng gửi confirm: 'CONFIRM_RESET_ALL' để xác nhận" });
+      }
       // Xóa tất cả deposit đã duyệt (test data cleanup)
       const result = await prisma.deposit.deleteMany({ where: { status: "approved" } });
       return res.json({ success: true, message: `Đã xóa ${result.count} deposit đã duyệt` });
