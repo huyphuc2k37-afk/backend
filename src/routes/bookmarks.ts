@@ -76,6 +76,12 @@ router.post("/", authRequired, async (req: AuthRequest, res: Response) => {
 
     const { storyId } = req.body;
 
+    // Only allow bookmarking approved stories
+    const story = await prisma.story.findUnique({ where: { id: storyId }, select: { approvalStatus: true } });
+    if (!story || story.approvalStatus !== "approved") {
+      return res.status(403).json({ error: "Truyện chưa được duyệt" });
+    }
+
     const existing = await prisma.bookmark.findUnique({
       where: { userId_storyId: { userId: user.id, storyId } },
     });

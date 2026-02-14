@@ -62,12 +62,15 @@ router.post("/", authRequired, async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ error: "Cannot follow yourself" });
     }
 
-    // Check if author exists
+    // Check if author exists and is actually an author/moderator/admin
     const author = await prisma.user.findUnique({
       where: { id: authorId },
       select: { id: true, role: true },
     });
     if (!author) return res.status(404).json({ error: "Author not found" });
+    if (author.role === "reader") {
+      return res.status(400).json({ error: "Chỉ có thể theo dõi tác giả" });
+    }
 
     // Create follow (upsert to avoid duplicate errors)
     await prisma.follow.create({

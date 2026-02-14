@@ -75,9 +75,12 @@ router.get("/:id/cover", async (req: Request, res: Response) => {
   try {
     const story = await prisma.story.findUnique({
       where: { id: req.params.id },
-      select: { coverImage: true },
+      select: { coverImage: true, approvalStatus: true },
     });
     if (!story?.coverImage) return res.status(404).end();
+
+    // Only serve covers for approved stories
+    if (story.approvalStatus !== "approved") return res.status(403).end();
 
     const match = story.coverImage.match(/^data:(image\/[a-zA-Z+]+);base64,(.+)$/);
     if (!match) return res.status(404).end();
