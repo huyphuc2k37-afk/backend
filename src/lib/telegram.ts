@@ -11,8 +11,20 @@ import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
-const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
-const CHAT_ID = process.env.TELEGRAM_CHAT_ID || "";
+const BOT_TOKEN = (process.env.TELEGRAM_BOT_TOKEN || "").trim();
+const CHAT_ID = (process.env.TELEGRAM_CHAT_ID || "").trim();
+
+function maskSecret(value: string) {
+  if (!value) return "(empty)";
+  if (value.length <= 8) return "(set:" + "*".repeat(value.length) + ")";
+  return `(${value.slice(0, 4)}…${value.slice(-4)})`;
+}
+
+// Log once at module load (no secret leakage)
+console.log("[Telegram] env loaded", {
+  botToken: maskSecret(BOT_TOKEN),
+  chatId: maskSecret(CHAT_ID),
+});
 
 // ─── Helpers ─────────────────────────────────────
 const fmtVND = (n: number) => new Intl.NumberFormat("vi-VN").format(n);
