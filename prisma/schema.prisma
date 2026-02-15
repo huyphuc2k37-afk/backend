@@ -41,6 +41,13 @@ model User {
   commentLikes  CommentLike[]
   earnings      AuthorEarning[]
   announcements Announcement[] @relation("AnnouncementCreator")
+
+  // ── Referral (Mã mời tác giả) ──
+  referralCode  String?   @unique // mã mời duy nhất, chỉ tác giả mới có
+  referredById  String?   // ID tác giả đã giới thiệu user này
+  referredBy    User?     @relation("Referrals", fields: [referredById], references: [id], onDelete: SetNull)
+  referrals     User[]    @relation("Referrals") // những user mà mình giới thiệu
+  referralEarnings ReferralEarning[]
 }
 
 // ─── Deposits (Nạp xu) ──────────────────────────
@@ -339,6 +346,29 @@ model PlatformEarning {
   @@index([type, createdAt])
   @@index([authorId, createdAt])
   @@index([storyId])
+}
+
+// ─── Referral Earnings (Hoa hồng giới thiệu) ────
+model ReferralEarning {
+  id              String   @id @default(cuid())
+  type            String   // "deposit_commission" | "author_income_commission"
+  amount          Int      // xu hoa hồng nhận được
+  sourceAmount    Int      // xu gốc (deposit amount hoặc author income)
+  rate            Float    // tỉ lệ hoa hồng (0.02 hoặc 0.01)
+  createdAt       DateTime @default(now())
+
+  referrerId      String   // tác giả nhận hoa hồng
+  referrer        User     @relation(fields: [referrerId], references: [id], onDelete: Cascade)
+  fromUserId      String?  // user được giới thiệu (người nạp xu hoặc tác giả có thu nhập)
+  depositId       String?  // deposit liên quan (nếu deposit_commission)
+  storyId         String?  // truyện liên quan (nếu author_income_commission)
+  storyTitle      String?
+  chapterId       String?
+  chapterTitle    String?
+
+  @@index([referrerId, createdAt])
+  @@index([referrerId, type])
+  @@index([fromUserId])
 }
 
 // ─── Announcements (marquee banner) ──────────────

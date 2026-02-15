@@ -125,6 +125,51 @@ router.post("/:id/gift", authRequired, async (req: AuthRequest, res: Response) =
       },
     });
 
+    // Hoa hồng referral 1% thu nhập tác giả từ gift (nếu tác giả được giới thiệu)
+    if (author.role === "author") {
+      const authorObj = await prisma.user.findUnique({
+        where: { id: author.id },
+        select: { referredById: true },
+      });
+      if (authorObj?.referredById) {
+        const referrer = await prisma.user.findUnique({
+          where: { id: authorObj.referredById },
+          select: { id: true, role: true },
+        });
+        if (referrer && (referrer.role === "author" || referrer.role === "admin")) {
+          const commission = Math.floor(split.author * 0.01);
+          if (commission >= 1) {
+            await prisma.$transaction([
+              prisma.user.update({
+                where: { id: referrer.id },
+                data: { coinBalance: { increment: commission } },
+              }),
+              prisma.referralEarning.create({
+                data: {
+                  type: "author_income_commission",
+                  amount: commission,
+                  sourceAmount: split.author,
+                  rate: 0.01,
+                  referrerId: referrer.id,
+                  fromUserId: author.id,
+                },
+              }),
+            ]);
+
+            await createNotificationSafe({
+              data: {
+                userId: referrer.id,
+                type: "wallet",
+                title: "Hoa hồng giới thiệu — thu nhập tác giả",
+                message: `Tác giả bạn giới thiệu vừa nhận ${split.author.toLocaleString("vi-VN")} xu ủng hộ. Bạn nhận được ${commission.toLocaleString("vi-VN")} xu hoa hồng (1%).`,
+                link: "/profile",
+              },
+            });
+          }
+        }
+      }
+    }
+
     res.json({ success: true, senderBalance: updatedSender.coinBalance });
   } catch (error) {
     console.error("Error gifting coins:", error);

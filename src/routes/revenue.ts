@@ -94,6 +94,13 @@ router.get("/", authRequired, async (req: AuthRequest, res: Response) => {
       _sum: { amount: true },
     });
 
+    // Hoa hồng giới thiệu
+    const referralEarningsTotal = await prisma.referralEarning.aggregate({
+      where: { referrerId: user.id },
+      _sum: { amount: true },
+    });
+    const referralRevenue = referralEarningsTotal._sum.amount || 0;
+
     // Doanh thu theo ngày (chart 30 ngày)
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     const dailyEarnings = await prisma.authorEarning.findMany({
@@ -132,6 +139,7 @@ router.get("/", authRequired, async (req: AuthRequest, res: Response) => {
       purchaseRevenue: purchaseRevenue._sum.amount || 0,
       tipRevenue: tipRevenue._sum.amount || 0,
       pendingWithdraw: pendingWithdraw._sum.amount || 0,
+      referralRevenue,
       topStories,
       dailyChart,
       recentSales: allEarnings.slice(0, 30).map((e) => ({

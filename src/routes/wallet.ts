@@ -6,6 +6,71 @@ import { splitRevenue } from "../lib/revenueSplit";
 
 const router = Router();
 
+// ── Helper: tính hoa hồng 1% thu nhập tác giả cho referrer ──
+async function processAuthorReferralCommission(
+  authorId: string,
+  authorShare: number,
+  storyId: string | null,
+  storyTitle: string | null,
+  chapterId: string | null,
+  chapterTitle: string | null,
+  tx?: any
+) {
+  const db = tx || prisma;
+  // Kiểm tra tác giả có được giới thiệu bởi ai không
+  const author = await db.user.findUnique({
+    where: { id: authorId },
+    select: { referredById: true },
+  });
+  if (!author?.referredById) return 0;
+
+  // Kiểm tra referrer có phải tác giả không
+  const referrer = await db.user.findUnique({
+    where: { id: author.referredById },
+    select: { id: true, role: true },
+  });
+  if (!referrer || (referrer.role !== "author" && referrer.role !== "admin")) return 0;
+
+  // 1% thu nhập thực tế (65% author share), lấy từ phần 35% nền tảng
+  const commission = Math.floor(authorShare * 0.01);
+  if (commission < 1) return 0;
+
+  await db.user.update({
+    where: { id: referrer.id },
+    data: { coinBalance: { increment: commission } },
+  });
+
+  await db.referralEarning.create({
+    data: {
+      type: "author_income_commission",
+      amount: commission,
+      sourceAmount: authorShare,
+      rate: 0.01,
+      referrerId: referrer.id,
+      fromUserId: authorId,
+      storyId,
+      storyTitle,
+      chapterId,
+      chapterTitle,
+    },
+  });
+
+  // Thông báo (fire-and-forget, ngoài transaction)
+  if (!tx) {
+    prisma.notification.create({
+      data: {
+        userId: referrer.id,
+        type: "wallet",
+        title: "Hoa hồng giới thiệu — thu nhập tác giả",
+        message: `Tác giả bạn giới thiệu vừa có thu nhập ${authorShare.toLocaleString("vi-VN")} xu. Bạn nhận được ${commission.toLocaleString("vi-VN")} xu hoa hồng (1%).`,
+        link: "/profile",
+      },
+    }).catch(() => {});
+  }
+
+  return commission;
+}
+
 // ─── GET /api/wallet — lấy thông tin ví ──────────
 router.get("/", authRequired, async (req: AuthRequest, res: Response) => {
   try {
@@ -213,6 +278,16 @@ router.post("/purchase", authRequired, async (req: AuthRequest, res: Response) =
       },
     }).catch(() => {});
 
+    // Hoa hồng referral 1% thu nhập tác giả (nếu tác giả được giới thiệu)
+    processAuthorReferralCommission(
+      chapter.story.authorId,
+      authorShare,
+      chapter.storyId,
+      chapter.story.title,
+      chapterId,
+      chapter.title
+    ).catch((err) => console.error("[Referral] purchase commission error:", err));
+
     // Get fresh balance after transaction
     const freshUser = await prisma.user.findUnique({ where: { id: user.id }, select: { coinBalance: true } });
     res.json({ success: true, spent: chapter.price, newBalance: freshUser?.coinBalance ?? (user.coinBalance - chapter.price) });
@@ -333,6 +408,19 @@ router.post("/tip", authRequired, async (req: AuthRequest, res: Response) => {
         link: "/write/revenue",
       },
     }).catch(() => {});
+
+    // Hoa hồng referral 1% thu nhập tác giả từ tip (nếu tác giả được giới thiệu)
+    if (!isAdmin) {
+      const tipAuthorShare = splitRevenue(amount).author;
+      processAuthorReferralCommission(
+        chapter.story.authorId,
+        tipAuthorShare,
+        chapter.storyId,
+        chapter.story.title,
+        chapterId,
+        chapter.title
+      ).catch((err) => console.error("[Referral] tip commission error:", err));
+    }
 
     res.json({ success: true, spent: isAdmin ? 0 : amount, newBalance });
   } catch (error) {
