@@ -58,6 +58,21 @@ router.get("/", authRequired, async (req: AuthRequest, res: Response) => {
       referredById: user.referredById || null,
     };
 
+    // Auto-generate referral code for existing authors who don't have one
+    if ((user.role === "author" || user.role === "admin") && !user.referralCode) {
+      const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+      for (let attempt = 0; attempt < 10; attempt++) {
+        let code = "REF";
+        for (let i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)];
+        const exists = await prisma.user.findUnique({ where: { referralCode: code } });
+        if (!exists) {
+          await prisma.user.update({ where: { id: user.id }, data: { referralCode: code } });
+          referralData.referralCode = code;
+          break;
+        }
+      }
+    }
+
     // If user was referred, get referrer name
     if (user.referredById) {
       const referrer = await prisma.user.findUnique({
