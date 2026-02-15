@@ -60,3 +60,15 @@ CREATE POLICY "Allow all for postgres" ON public."CommentLike" FOR ALL TO postgr
 -- Follow
 ALTER TABLE IF EXISTS public."Follow" ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Allow all for postgres" ON public."Follow" FOR ALL TO postgres USING (true) WITH CHECK (true);
+
+-- Announcement
+ALTER TABLE IF EXISTS public."Announcement" ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all for postgres" ON public."Announcement" FOR ALL TO postgres USING (true) WITH CHECK (true);
+
+-- PlatformEarning
+ALTER TABLE IF EXISTS public."PlatformEarning" ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all for postgres" ON public."PlatformEarning" FOR ALL TO postgres USING (true) WITH CHECK (true);
+
+-- AuthorEarning
+ALTER TABLE IF EXISTS public."AuthorEarning" ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all for postgres" ON public."AuthorEarning" FOR ALL TO postgres USING (true) WITH CHECK (true);

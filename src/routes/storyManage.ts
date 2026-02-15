@@ -21,6 +21,37 @@ function sanitizeStoryTags(tags: unknown): string | null | undefined {
   return cleaned.length > 0 ? cleaned.join(",") : null;
 }
 
+/**
+ * Gửi thông báo đến tất cả moderator & admin khi có nội dung cần duyệt.
+ * Fire-and-forget — lỗi không ảnh hưởng response.
+ */
+async function notifyModerators(opts: {
+  title: string;
+  message: string;
+  link: string;
+}) {
+  try {
+    const mods = await prisma.user.findMany({
+      where: { role: { in: ["moderator", "admin"] } },
+      select: { id: true },
+    });
+
+    if (mods.length === 0) return;
+
+    await prisma.notification.createMany({
+      data: mods.map((mod) => ({
+        userId: mod.id,
+        type: "system" as const,
+        title: opts.title,
+        message: opts.message,
+        link: opts.link,
+      })),
+    });
+  } catch (err) {
+    console.error("Failed to notify moderators:", err);
+  }
+}
+
 
 
 // ─── GET /api/manage/stories — danh sách truyện của tác giả ──
@@ -132,6 +163,13 @@ router.post("/stories", authRequired, async (req: AuthRequest, res: Response) =>
     });
 
     res.status(201).json(story);
+
+    // Notify moderators about new story pending review
+    notifyModerators({
+      title: "📖 Truyện mới cần duyệt",
+      message: `Tác giả ${user.name} vừa đăng truyện "${title}". Vui lòng kiểm duyệt.`,
+      link: "/mod",
+    });
   } catch (error: any) {
     if (error.code === "P2002") {
       return res.status(409).json({ error: "Slug đã tồn tại, hãy chọn tên khác" });
@@ -179,6 +217,15 @@ router.put("/stories/:id", authRequired, async (req: AuthRequest, res: Response)
       where: { id: req.params.id },
       data,
     });
+
+    // Notify moderators if story was re-submitted for review
+    if (story.approvalStatus === "rejected" && data.approvalStatus === "pending") {
+      notifyModerators({
+        title: "📖 Truyện gửi lại cần duyệt",
+        message: `Tác giả ${user.name} đã chỉnh sửa và gửi lại truyện "${updated.title}" để duyệt.`,
+        link: "/mod",
+      });
+    }
 
     res.json(updated);
   } catch (error) {
@@ -258,6 +305,13 @@ router.post("/stories/:storyId/chapters", authRequired, async (req: AuthRequest,
     await prisma.story.update({ where: { id: req.params.storyId }, data: { updatedAt: new Date() } });
 
     res.status(201).json(chapter);
+
+    // Notify moderators about new chapter pending review
+    notifyModerators({
+      title: "📝 Chương mới cần duyệt",
+      message: `Chương ${nextNumber}: "${title}" của truyện "${story.title}" cần được kiểm duyệt.`,
+      link: "/mod",
+    });
   } catch (error) {
     console.error("Error creating chapter:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -293,7 +347,7 @@ router.put("/chapters/:id", authRequired, async (req: AuthRequest, res: Response
 
     const chapter = await prisma.chapter.findUnique({
       where: { id: req.params.id },
-      include: { story: { select: { authorId: true } } },
+      include: { story: { select: { authorId: true, title: true } } },
     });
 
     if (!chapter) return res.status(404).json({ error: "Chapter not found" });
@@ -330,6 +384,16 @@ router.put("/chapters/:id", authRequired, async (req: AuthRequest, res: Response
     }
 
     const updated = await prisma.chapter.update({ where: { id: req.params.id }, data });
+
+    // Notify moderators if chapter was reset to pending
+    if (data.approvalStatus === "pending" && chapter.approvalStatus !== "pending") {
+      notifyModerators({
+        title: "📝 Chương chỉnh sửa cần duyệt lại",
+        message: `Chương ${chapter.number}: "${updated.title}" (truyện "${chapter.story.title}") đã được chỉnh sửa và cần duyệt lại.`,
+        link: "/mod",
+      });
+    }
+
     res.json(updated);
   } catch (error) {
     console.error("Error updating chapter:", error);
