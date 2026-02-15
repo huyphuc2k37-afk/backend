@@ -392,48 +392,52 @@ router.put("/deposits/:id", authRequired, adminRequired, async (req: AuthRequest
       });
 
       // ── Hoa hồng referral 2% trên nạp xu ──
-      // Kiểm tra user có được giới thiệu bởi tác giả không
-      const depositUser = await prisma.user.findUnique({
-        where: { id: deposit.userId },
-        select: { referredById: true, name: true },
-      });
-      if (depositUser?.referredById) {
-        const referrer = await prisma.user.findUnique({
-          where: { id: depositUser.referredById },
-          select: { id: true, role: true },
+      // Wrap in try-catch to avoid breaking the deposit approval response
+      try {
+        const depositUser = await prisma.user.findUnique({
+          where: { id: deposit.userId },
+          select: { referredById: true, name: true },
         });
-        if (referrer && (referrer.role === "author" || referrer.role === "admin")) {
-          const commission = Math.floor(deposit.coins * 0.02);
-          if (commission >= 1) {
-            await prisma.$transaction([
-              prisma.user.update({
-                where: { id: referrer.id },
-                data: { coinBalance: { increment: commission } },
-              }),
-              prisma.referralEarning.create({
-                data: {
-                  type: "deposit_commission",
-                  amount: commission,
-                  sourceAmount: deposit.coins,
-                  rate: 0.02,
-                  referrerId: referrer.id,
-                  fromUserId: deposit.userId,
-                  depositId: deposit.id,
-                },
-              }),
-            ]);
+        if (depositUser?.referredById) {
+          const referrer = await prisma.user.findUnique({
+            where: { id: depositUser.referredById },
+            select: { id: true, role: true },
+          });
+          if (referrer && (referrer.role === "author" || referrer.role === "admin")) {
+            const commission = Math.floor(deposit.coins * 0.02);
+            if (commission >= 1) {
+              await prisma.$transaction([
+                prisma.user.update({
+                  where: { id: referrer.id },
+                  data: { coinBalance: { increment: commission } },
+                }),
+                prisma.referralEarning.create({
+                  data: {
+                    type: "deposit_commission",
+                    amount: commission,
+                    sourceAmount: deposit.coins,
+                    rate: 0.02,
+                    referrerId: referrer.id,
+                    fromUserId: deposit.userId,
+                    depositId: deposit.id,
+                  },
+                }),
+              ]);
 
-            await createNotificationSafe({
-              data: {
-                userId: referrer.id,
-                type: "wallet",
-                title: "Hoa hồng giới thiệu — nạp xu",
-                message: `Người bạn giới thiệu vừa nạp ${deposit.coins.toLocaleString("vi-VN")} xu. Bạn nhận được ${commission.toLocaleString("vi-VN")} xu hoa hồng (2%).`,
-                link: "/profile",
-              },
-            });
+              await createNotificationSafe({
+                data: {
+                  userId: referrer.id,
+                  type: "wallet",
+                  title: "Hoa hồng giới thiệu — nạp xu",
+                  message: `Người bạn giới thiệu vừa nạp ${deposit.coins.toLocaleString("vi-VN")} xu. Bạn nhận được ${commission.toLocaleString("vi-VN")} xu hoa hồng (2%).`,
+                  link: "/profile",
+                },
+              });
+            }
           }
         }
+      } catch (refErr) {
+        console.error("[Referral] deposit commission error (non-blocking):", refErr);
       }
     } else {
       // Từ chối

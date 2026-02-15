@@ -35,25 +35,49 @@ async function processAuthorReferralCommission(
   const commission = Math.floor(authorShare * 0.01);
   if (commission < 1) return 0;
 
-  await db.user.update({
-    where: { id: referrer.id },
-    data: { coinBalance: { increment: commission } },
-  });
-
-  await db.referralEarning.create({
-    data: {
-      type: "author_income_commission",
-      amount: commission,
-      sourceAmount: authorShare,
-      rate: 0.01,
-      referrerId: referrer.id,
-      fromUserId: authorId,
-      storyId,
-      storyTitle,
-      chapterId,
-      chapterTitle,
-    },
-  });
+  // Use $transaction to ensure balance update + earning record are atomic
+  if (tx) {
+    // Already inside a transaction context
+    await tx.user.update({
+      where: { id: referrer.id },
+      data: { coinBalance: { increment: commission } },
+    });
+    await tx.referralEarning.create({
+      data: {
+        type: "author_income_commission",
+        amount: commission,
+        sourceAmount: authorShare,
+        rate: 0.01,
+        referrerId: referrer.id,
+        fromUserId: authorId,
+        storyId,
+        storyTitle,
+        chapterId,
+        chapterTitle,
+      },
+    });
+  } else {
+    await prisma.$transaction([
+      prisma.user.update({
+        where: { id: referrer.id },
+        data: { coinBalance: { increment: commission } },
+      }),
+      prisma.referralEarning.create({
+        data: {
+          type: "author_income_commission",
+          amount: commission,
+          sourceAmount: authorShare,
+          rate: 0.01,
+          referrerId: referrer.id,
+          fromUserId: authorId,
+          storyId,
+          storyTitle,
+          chapterId,
+          chapterTitle,
+        },
+      }),
+    ]);
+  }
 
   // Thông báo (fire-and-forget, ngoài transaction)
   if (!tx) {
