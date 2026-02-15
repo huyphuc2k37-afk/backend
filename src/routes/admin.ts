@@ -151,6 +151,10 @@ router.put("/users/:id", authRequired, adminRequired, async (req: AuthRequest, r
     if (!["reader", "author", "moderator", "admin"].includes(role)) {
       return res.status(400).json({ error: "Invalid role" });
     }
+    const admin = (req as any).adminUser;
+    if (req.params.id === admin.id && role !== "admin") {
+      return res.status(400).json({ error: "Không thể thay đổi role của chính mình" });
+    }
     const user = await prisma.user.update({
       where: { id: req.params.id },
       data: { role },
@@ -171,27 +175,43 @@ router.post("/users/:id/adjust-coins", authRequired, adminRequired, async (req: 
       return res.status(400).json({ error: "Số xu phải là số nguyên khác 0" });
     }
 
-    const user = await prisma.user.findUnique({ where: { id: req.params.id } });
-    if (!user) return res.status(404).json({ error: "User not found" });
+    const targetId = req.params.id;
 
-    // Nếu trừ xu, kiểm tra không cho âm
-    if (coins < 0 && user.coinBalance + coins < 0) {
-      return res.status(400).json({
-        error: `Không thể trừ ${Math.abs(coins)} xu. Số dư hiện tại: ${user.coinBalance} xu`,
+    // Atomic check + update inside transaction to prevent race condition
+    let updated: { id: string; coinBalance: number };
+    try {
+      updated = await prisma.$transaction(async (tx) => {
+        const user = await tx.user.findUnique({ where: { id: targetId }, select: { id: true, coinBalance: true } });
+        if (!user) throw new Error("USER_NOT_FOUND");
+
+        if (coins < 0 && user.coinBalance + coins < 0) {
+          throw new Error(`NEGATIVE_BALANCE:${user.coinBalance}`);
+        }
+
+        return tx.user.update({
+          where: { id: user.id },
+          data: { coinBalance: { increment: coins } },
+          select: { id: true, coinBalance: true },
+        });
       });
+    } catch (txError: any) {
+      if (txError.message === "USER_NOT_FOUND") {
+        return res.status(404).json({ error: "User not found" });
+      }
+      if (txError.message?.startsWith("NEGATIVE_BALANCE:")) {
+        const currentBalance = txError.message.split(":")[1];
+        return res.status(400).json({
+          error: `Không thể trừ ${Math.abs(coins)} xu. Số dư hiện tại: ${currentBalance} xu`,
+        });
+      }
+      throw txError;
     }
-
-    const updated = await prisma.user.update({
-      where: { id: user.id },
-      data: { coinBalance: { increment: coins } },
-      select: { id: true, coinBalance: true },
-    });
 
     // Gửi thông báo cho user
     const action = coins > 0 ? "cộng" : "trừ";
     await createNotificationSafe({
       data: {
-        userId: user.id,
+        userId: updated.id,
         type: "wallet",
         title: `Admin đã ${action} ${Math.abs(coins).toLocaleString("vi-VN")} xu`,
         message: reason

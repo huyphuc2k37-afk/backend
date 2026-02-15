@@ -137,6 +137,11 @@ router.put("/stories/:id/approve", authRequired, modRequired, async (req: AuthRe
     const story = await prisma.story.findUnique({ where: { id: req.params.id } });
     if (!story) return res.status(404).json({ error: "Story not found" });
 
+    // Prevent self-moderation
+    if (story.authorId === modUser.id) {
+      return res.status(403).json({ error: "Không thể duyệt truyện của chính mình" });
+    }
+
     const updated = await prisma.story.update({
       where: { id: req.params.id },
       data: {
@@ -178,6 +183,11 @@ router.put("/stories/:id/reject", authRequired, modRequired, async (req: AuthReq
 
     const story = await prisma.story.findUnique({ where: { id: req.params.id } });
     if (!story) return res.status(404).json({ error: "Story not found" });
+
+    // Prevent self-moderation
+    if (story.authorId === modUser.id) {
+      return res.status(403).json({ error: "Không thể từ chối truyện của chính mình" });
+    }
 
     const updated = await prisma.story.update({
       where: { id: req.params.id },
@@ -322,6 +332,11 @@ router.put("/chapters/:id/approve", authRequired, modRequired, async (req: AuthR
     });
     if (!chapter) return res.status(404).json({ error: "Chapter not found" });
 
+    // Prevent self-moderation
+    if (chapter.story.authorId === modUser.id) {
+      return res.status(403).json({ error: "Không thể duyệt chương của chính mình" });
+    }
+
     const updated = await prisma.chapter.update({
       where: { id: req.params.id },
       data: {
@@ -366,6 +381,11 @@ router.put("/chapters/:id/reject", authRequired, modRequired, async (req: AuthRe
       include: { story: { select: { title: true, authorId: true, id: true } } },
     });
     if (!chapter) return res.status(404).json({ error: "Chapter not found" });
+
+    // Prevent self-moderation
+    if (chapter.story.authorId === modUser.id) {
+      return res.status(403).json({ error: "Không thể từ chối chương của chính mình" });
+    }
 
     const updated = await prisma.chapter.update({
       where: { id: req.params.id },

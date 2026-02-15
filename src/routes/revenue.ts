@@ -188,13 +188,14 @@ router.post("/withdraw", authRequired, async (req: AuthRequest, res: Response) =
       return res.status(403).json({ error: "Author only" });
     }
 
-    const { amount, bankName, bankAccount, bankHolder } = req.body;
+    const { amount: rawAmount, bankName, bankAccount, bankHolder } = req.body;
 
-    if (!amount || !bankName || !bankAccount || !bankHolder) {
+    if (!rawAmount || !bankName || !bankAccount || !bankHolder) {
       return res.status(400).json({ error: "Missing required fields" });
     }
 
-    if (amount < 50000) {
+    const amount = typeof rawAmount === "string" ? parseInt(rawAmount, 10) : rawAmount;
+    if (!Number.isFinite(amount) || !Number.isInteger(amount) || amount < 50000) {
       return res.status(400).json({ error: "Minimum withdrawal is 50,000 xu" });
     }
 

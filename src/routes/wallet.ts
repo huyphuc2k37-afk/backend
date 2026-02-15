@@ -225,10 +225,16 @@ router.post("/purchase", authRequired, async (req: AuthRequest, res: Response) =
     // Kiểm tra chương có tồn tại và có khóa không
     const chapter = await prisma.chapter.findUnique({
       where: { id: chapterId },
-      include: { story: { select: { authorId: true, title: true } } },
+      include: { story: { select: { authorId: true, title: true, approvalStatus: true } } },
     });
     if (!chapter) return res.status(404).json({ error: "Chapter not found" });
-    if (!chapter.isLocked) return res.status(400).json({ error: "Chapter is free" });
+    if (chapter.approvalStatus !== "approved" || chapter.story.approvalStatus !== "approved") {
+      return res.status(403).json({ error: "Chương hoặc truyện chưa được duyệt" });
+    }
+    if (!chapter.isLocked || chapter.price <= 0) return res.status(400).json({ error: "Chapter is free" });
+    if (user.id === chapter.story.authorId) {
+      return res.status(400).json({ error: "Không thể mua chương của chính mình" });
+    }
 
     // Kiểm tra đã mua chưa
     const existing = await prisma.chapterPurchase.findUnique({

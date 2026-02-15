@@ -130,6 +130,14 @@ router.post("/", authRequired, async (req: AuthRequest, res: Response) => {
       finalStoryId = chapter.storyId;
     }
 
+    // Block comments on unapproved stories
+    if (finalStoryId) {
+      const story = await prisma.story.findUnique({ where: { id: finalStoryId }, select: { approvalStatus: true } });
+      if (!story || story.approvalStatus !== "approved") {
+        return res.status(403).json({ error: "Truyện chưa được duyệt" });
+      }
+    }
+
     const comment = await prisma.comment.create({
       data: {
         content: content.trim(),

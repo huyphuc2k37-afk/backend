@@ -197,7 +197,12 @@ router.put("/stories/:id", authRequired, async (req: AuthRequest, res: Response)
     if (coverImage !== undefined) data.coverImage = coverImage ? await compressBase64Image(coverImage) : coverImage;
     if (genre !== undefined) data.genre = genre;
     if (tags !== undefined) data.tags = sanitizeStoryTags(tags);
-    if (status !== undefined) data.status = status;
+    if (status !== undefined) {
+      if (!["ongoing", "completed", "paused"].includes(status)) {
+        return res.status(400).json({ error: "Trạng thái không hợp lệ. Chỉ chấp nhận: ongoing, completed, paused" });
+      }
+      data.status = status;
+    }
     if (theme !== undefined) data.theme = theme;
     if (expectedChapters !== undefined) data.expectedChapters = expectedChapters ? parseInt(expectedChapters) : null;
     if (worldBuilding !== undefined) data.worldBuilding = worldBuilding;
@@ -207,10 +212,13 @@ router.put("/stories/:id", authRequired, async (req: AuthRequest, res: Response)
     if (postSchedule !== undefined) data.postSchedule = postSchedule;
     if (isAdult !== undefined) data.isAdult = isAdult;
 
-    // Reset to pending when author edits a rejected story (re-submit for review)
-    if (story.approvalStatus === "rejected") {
-      data.approvalStatus = "pending";
-      data.rejectionReason = null;
+    // Reset to pending when author edits substantive content of approved/rejected story
+    if (story.approvalStatus === "rejected" || story.approvalStatus === "approved") {
+      const substantiveChange = data.title || data.description || data.coverImage || data.genre || data.isAdult !== undefined;
+      if (substantiveChange) {
+        data.approvalStatus = "pending";
+        data.rejectionReason = null;
+      }
     }
 
     const updated = await prisma.story.update({
@@ -243,6 +251,16 @@ router.delete("/stories/:id", authRequired, async (req: AuthRequest, res: Respon
     const story = await prisma.story.findUnique({ where: { id: req.params.id } });
     if (!story) return res.status(404).json({ error: "Story not found" });
     if (story.authorId !== user.id) return res.status(403).json({ error: "Forbidden" });
+
+    // Check for purchases before allowing delete
+    const purchaseCount = await prisma.chapterPurchase.count({
+      where: { chapter: { storyId: req.params.id } },
+    });
+    if (purchaseCount > 0) {
+      return res.status(400).json({
+        error: `Không thể xóa truyện có ${purchaseCount} lượt mua chương. Hãy đặt trạng thái "Tạm dừng" thay vì xóa.`,
+      });
+    }
 
     await prisma.story.delete({ where: { id: req.params.id } });
     res.json({ message: "Đã xóa truyện" });
@@ -371,10 +389,14 @@ router.put("/chapters/:id", authRequired, async (req: AuthRequest, res: Response
     }
     if (price !== undefined) {
       const finalLocked = data.isLocked !== undefined ? data.isLocked : chapter.isLocked;
-      if (finalLocked && (price < 100 || price > 5000)) {
-        return res.status(400).json({ error: "Giá chương trả phí phải từ 100 đến 5000 xu" });
+      if (finalLocked) {
+        if (price < 100 || price > 5000) {
+          return res.status(400).json({ error: "Giá chương trả phí phải từ 100 đến 5000 xu" });
+        }
+        data.price = price;
+      } else {
+        data.price = 0; // Force price to 0 for unlocked chapters
       }
-      data.price = price;
     }
 
     // Reset to pending when author edits content of a chapter
@@ -414,6 +436,16 @@ router.delete("/chapters/:id", authRequired, async (req: AuthRequest, res: Respo
 
     if (!chapter) return res.status(404).json({ error: "Chapter not found" });
     if (chapter.story.authorId !== user.id) return res.status(403).json({ error: "Forbidden" });
+
+    // Check for purchases before allowing delete
+    const chapterPurchases = await prisma.chapterPurchase.count({
+      where: { chapterId: req.params.id },
+    });
+    if (chapterPurchases > 0) {
+      return res.status(400).json({
+        error: `Không thể xóa chương có ${chapterPurchases} lượt mua. Hãy liên hệ admin nếu cần.`,
+      });
+    }
 
     await prisma.chapter.delete({ where: { id: req.params.id } });
     res.json({ message: "Đã xóa chương" });

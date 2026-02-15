@@ -110,8 +110,19 @@ router.put("/", authRequired, async (req: AuthRequest, res: Response) => {
     if (!existing) return res.status(404).json({ error: "User not found" });
 
     const data: any = {};
-    if (name) data.name = name;
-    if (bio !== undefined) data.bio = bio;
+    if (name !== undefined) {
+      const trimmed = typeof name === "string" ? name.trim() : "";
+      if (trimmed.length < 1 || trimmed.length > 100) {
+        return res.status(400).json({ error: "Tên phải từ 1 đến 100 ký tự" });
+      }
+      data.name = trimmed;
+    }
+    if (bio !== undefined) {
+      if (typeof bio === "string" && bio.length > 2000) {
+        return res.status(400).json({ error: "Tiểu sử không được vượt quá 2000 ký tự" });
+      }
+      data.bio = bio;
+    }
     if (image !== undefined) data.image = image;
     if (role === "author") {
       if (existing.role === "admin" || existing.role === "moderator") {

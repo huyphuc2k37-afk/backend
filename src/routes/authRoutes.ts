@@ -23,10 +23,16 @@ function getSupabase() {
 // ─── POST /api/auth/register — đăng ký bằng email ──
 router.post("/register", async (req: Request, res: Response) => {
   try {
-    const { email, password, name } = req.body;
+    const { email: rawEmail, password, name: rawName } = req.body;
+    const email = typeof rawEmail === "string" ? rawEmail.trim() : "";
+    const name = typeof rawName === "string" ? rawName.trim() : "";
 
     if (!email || !password || !name) {
       return res.status(400).json({ error: "Vui lòng điền đầy đủ thông tin" });
+    }
+
+    if (name.length < 2 || name.length > 50) {
+      return res.status(400).json({ error: "Tên phải từ 2 đến 50 ký tự" });
     }
 
     // Basic email format validation
@@ -34,8 +40,8 @@ router.post("/register", async (req: Request, res: Response) => {
       return res.status(400).json({ error: "Email không hợp lệ" });
     }
 
-    if (password.length < 6) {
-      return res.status(400).json({ error: "Mật khẩu phải có ít nhất 6 ký tự" });
+    if (password.length < 6 || password.trim().length < 6) {
+      return res.status(400).json({ error: "Mật khẩu phải có ít nhất 6 ký tự (không tính khoảng trắng)" });
     }
 
     // Check if email already exists
@@ -133,14 +139,19 @@ router.post("/login", async (req: Request, res: Response) => {
     }
 
     const user = await prisma.user.findUnique({ where: { email } });
-    if (!user || !user.password) {
+    if (!user) {
       return res.status(401).json({ error: "Email hoặc mật khẩu không đúng" });
     }
 
+    // Check provider BEFORE password — Google users have password=null
     if (user.provider !== "email") {
       return res.status(400).json({
         error: "Tài khoản này sử dụng đăng nhập Google. Vui lòng dùng nút Google.",
       });
+    }
+
+    if (!user.password) {
+      return res.status(401).json({ error: "Email hoặc mật khẩu không đúng" });
     }
 
     if (!user.emailVerified) {
