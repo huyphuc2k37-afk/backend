@@ -75,6 +75,7 @@ router.post("/", authRequired, async (req: AuthRequest, res: Response) => {
     }
 
     const { storyId } = req.body;
+    if (!storyId) return res.status(400).json({ error: "storyId is required" });
 
     // Only allow bookmarking approved stories
     const story = await prisma.story.findUnique({ where: { id: storyId }, select: { approvalStatus: true } });

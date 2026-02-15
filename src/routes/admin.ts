@@ -467,7 +467,10 @@ router.put("/deposits/:id", authRequired, adminRequired, async (req: AuthRequest
     });
 
     res.json(updated);
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.message === "ALREADY_PROCESSED") {
+      return res.status(409).json({ error: "Yêu cầu nạp xu đã được xử lý trước đó" });
+    }
     console.error("Error updating deposit:", error);
     res.status(500).json({ error: "Internal server error" });
   }
@@ -579,7 +582,10 @@ router.put("/withdrawals/:id", authRequired, adminRequired, async (req: AuthRequ
     });
 
     res.json(updated);
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.message === "ALREADY_PROCESSED") {
+      return res.status(409).json({ error: "Yêu cầu rút tiền đã được xử lý trước đó" });
+    }
     console.error("Error updating withdrawal:", error);
     res.status(500).json({ error: "Internal server error" });
   }

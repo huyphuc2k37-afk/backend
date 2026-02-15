@@ -36,14 +36,13 @@ router.get("/:id", authOptional, async (req: AuthRequest, res: Response) => {
       }
     }
 
-    // Block access to unapproved chapters (allow author to still see their own)
+    // Block access to unapproved chapters (allow author/moderator/admin to still see)
     if (chapter.approvalStatus !== "approved") {
-      // Check if current user is the author
-      const isAuthor = req.user?.email
-        ? await prisma.user.findUnique({ where: { email: req.user.email }, select: { id: true } })
-            .then((u) => u?.id === chapter.story.authorId)
+      const canAccess = req.user?.email
+        ? await prisma.user.findUnique({ where: { email: req.user.email }, select: { id: true, role: true } })
+            .then((u) => u?.id === chapter.story.authorId || u?.role === "moderator" || u?.role === "admin")
         : false;
-      if (!isAuthor) {
+      if (!canAccess) {
         return res.status(403).json({ error: "Chương chưa được duyệt" });
       }
     }

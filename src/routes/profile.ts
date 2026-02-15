@@ -34,14 +34,16 @@ router.get("/", authRequired, async (req: AuthRequest, res: Response) => {
       },
     });
 
-    // Auto-create user if first login
+    // Auto-create user if first login (use upsert to prevent race condition on concurrent first requests)
     if (!user) {
-      user = await prisma.user.create({
-        data: {
+      user = await prisma.user.upsert({
+        where: { email: req.user!.email },
+        create: {
           email: req.user!.email,
           name: req.user!.name || "Người dùng",
           image: req.user!.image,
         },
+        update: {}, // already exists — do nothing
         include: {
           stories: {
             select: { id: true, title: true, slug: true, views: true, likes: true, status: true, approvalStatus: true, createdAt: true },
@@ -200,11 +202,14 @@ router.post("/referral", authRequired, async (req: AuthRequest, res: Response) =
       return res.status(400).json({ error: "Bạn không thể nhập mã mời của chính mình" });
     }
 
-    // Lưu referrer
-    await prisma.user.update({
-      where: { id: user.id },
+    // Lưu referrer (atomic: only update if still null to prevent race condition)
+    const updateResult = await prisma.user.updateMany({
+      where: { id: user.id, referredById: null },
       data: { referredById: referrer.id },
     });
+    if (updateResult.count === 0) {
+      return res.status(400).json({ error: "Bạn đã nhập mã mời trước đó rồi, không thể thay đổi" });
+    }
 
     // Thông báo cho tác giả giới thiệu
     await createNotificationSafe({

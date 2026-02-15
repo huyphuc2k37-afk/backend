@@ -25,8 +25,8 @@ router.get("/", async (req: Request, res: Response) => {
     else if (sort === "likes") orderBy.likes = "desc";
     else orderBy.updatedAt = "desc";
 
-    const pageNum = parseInt(page as string);
-    const limitNum = parseInt(limit as string);
+    const pageNum = Math.max(1, parseInt(page as string) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit as string) || 20));
 
     const [stories, total] = await Promise.all([
       prisma.story.findMany({

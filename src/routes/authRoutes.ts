@@ -29,6 +29,11 @@ router.post("/register", async (req: Request, res: Response) => {
       return res.status(400).json({ error: "Vui lòng điền đầy đủ thông tin" });
     }
 
+    // Basic email format validation
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(400).json({ error: "Email không hợp lệ" });
+    }
+
     if (password.length < 6) {
       return res.status(400).json({ error: "Mật khẩu phải có ít nhất 6 ký tự" });
     }
@@ -54,15 +59,24 @@ router.post("/register", async (req: Request, res: Response) => {
     const hashedPassword = await bcrypt.hash(password, 12);
 
     // Create user in our DB (unverified)
-    await prisma.user.create({
-      data: {
-        name,
-        email,
-        password: hashedPassword,
-        provider: "email",
-        emailVerified: false,
-      },
-    });
+    // If Prisma create fails (e.g. race condition on unique email), Supabase user is orphaned
+    // but user can still re-attempt login since Supabase signup is idempotent for existing emails
+    try {
+      await prisma.user.create({
+        data: {
+          name,
+          email,
+          password: hashedPassword,
+          provider: "email",
+          emailVerified: false,
+        },
+      });
+    } catch (dbErr: any) {
+      if (dbErr.code === "P2002") {
+        return res.status(400).json({ error: "Email đã được sử dụng" });
+      }
+      throw dbErr;
+    }
 
     res.json({
       success: true,
