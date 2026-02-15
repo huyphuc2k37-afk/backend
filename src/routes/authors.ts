@@ -25,6 +25,7 @@ router.get("/:id", async (req, res: Response) => {
         bio: true,
         role: true,
         createdAt: true,
+        referralCode: true,
       },
     });
 
