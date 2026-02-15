@@ -365,19 +365,21 @@ router.put("/deposits/:id", authRequired, adminRequired, async (req: AuthRequest
     }
 
     if (status === "approved") {
-      // Duyệt → cộng xu cho user
-      const txOps = [
-        prisma.deposit.update({
+      // Duyệt → cộng xu cho user (interactive transaction to prevent double-approval)
+      await prisma.$transaction(async (tx) => {
+        const freshDeposit = await tx.deposit.findUnique({ where: { id: deposit.id }, select: { status: true } });
+        if (!freshDeposit || freshDeposit.status !== "pending") {
+          throw new Error("ALREADY_PROCESSED");
+        }
+        await tx.deposit.update({
           where: { id: deposit.id },
           data: { status: "approved", adminNote },
-        }),
-        prisma.user.update({
+        });
+        await tx.user.update({
           where: { id: deposit.userId },
           data: { coinBalance: { increment: deposit.coins } },
-        }),
-      ];
-
-      await prisma.$transaction(txOps);
+        });
+      });
 
       await createNotificationSafe({
         data: {
@@ -518,13 +520,17 @@ router.put("/withdrawals/:id", authRequired, adminRequired, async (req: AuthRequ
     }
 
     if (status === "approved") {
-      // Duyệt — xu đã bị trừ khi gửi yêu cầu, chỉ cần cập nhật status
-      await prisma.$transaction([
-        prisma.withdrawal.update({
+      // Duyệt — xu đã bị trừ khi gửi yêu cầu, chỉ cần cập nhật status (with race guard)
+      await prisma.$transaction(async (tx) => {
+        const freshW = await tx.withdrawal.findUnique({ where: { id: withdrawal.id }, select: { status: true } });
+        if (!freshW || freshW.status !== "pending") {
+          throw new Error("ALREADY_PROCESSED");
+        }
+        await tx.withdrawal.update({
           where: { id: withdrawal.id },
           data: { status: "approved", adminNote },
-        }),
-      ]);
+        });
+      });
 
       await createNotificationSafe({
         data: {
@@ -538,17 +544,21 @@ router.put("/withdrawals/:id", authRequired, adminRequired, async (req: AuthRequ
         },
       });
     } else {
-      // Từ chối → hoàn xu cho tác giả
-      await prisma.$transaction([
-        prisma.withdrawal.update({
+      // Từ chối → hoàn xu cho tác giả (with race guard)
+      await prisma.$transaction(async (tx) => {
+        const freshW = await tx.withdrawal.findUnique({ where: { id: withdrawal.id }, select: { status: true } });
+        if (!freshW || freshW.status !== "pending") {
+          throw new Error("ALREADY_PROCESSED");
+        }
+        await tx.withdrawal.update({
           where: { id: withdrawal.id },
           data: { status: "rejected", adminNote },
-        }),
-        prisma.user.update({
+        });
+        await tx.user.update({
           where: { id: withdrawal.userId },
           data: { coinBalance: { increment: withdrawal.amount } },
-        }),
-      ]);
+        });
+      });
 
       await createNotificationSafe({
         data: {

@@ -202,23 +202,23 @@ router.post("/:id/like", authRequired, async (req: AuthRequest, res: Response) =
     if (!user) return res.status(404).json({ error: "User not found" });
 
     const commentId = req.params.id;
-    const existing = await prisma.commentLike.findUnique({
-      where: { userId_commentId: { userId: user.id, commentId } },
-    });
+    // Use interactive transaction to prevent race conditions on double-click
+    const result = await prisma.$transaction(async (tx) => {
+      const existing = await tx.commentLike.findUnique({
+        where: { userId_commentId: { userId: user.id, commentId } },
+      });
 
-    if (existing) {
-      await prisma.$transaction([
-        prisma.commentLike.delete({ where: { id: existing.id } }),
-        prisma.comment.update({ where: { id: commentId }, data: { likes: { decrement: 1 } } }),
-      ]);
-      return res.json({ liked: false });
-    } else {
-      await prisma.$transaction([
-        prisma.commentLike.create({ data: { userId: user.id, commentId } }),
-        prisma.comment.update({ where: { id: commentId }, data: { likes: { increment: 1 } } }),
-      ]);
-      return res.json({ liked: true });
-    }
+      if (existing) {
+        await tx.commentLike.delete({ where: { id: existing.id } });
+        await tx.comment.update({ where: { id: commentId }, data: { likes: { decrement: 1 } } });
+        return { liked: false };
+      } else {
+        await tx.commentLike.create({ data: { userId: user.id, commentId } });
+        await tx.comment.update({ where: { id: commentId }, data: { likes: { increment: 1 } } });
+        return { liked: true };
+      }
+    });
+    return res.json(result);
   } catch (error) {
     console.error("Error toggling comment like:", error);
     res.status(500).json({ error: "Internal server error" });

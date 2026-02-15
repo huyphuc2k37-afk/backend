@@ -18,25 +18,23 @@ router.post("/:id/like", authRequired, async (req: AuthRequest, res: Response) =
       return res.status(403).json({ error: "Truyện chưa được duyệt" });
     }
 
-    const existing = await prisma.storyLike.findUnique({
-      where: { userId_storyId: { userId: user.id, storyId } },
-    });
+    // Use interactive transaction to prevent race conditions on double-click
+    const result = await prisma.$transaction(async (tx) => {
+      const existing = await tx.storyLike.findUnique({
+        where: { userId_storyId: { userId: user.id, storyId } },
+      });
 
-    if (existing) {
-      // Unlike
-      await prisma.$transaction([
-        prisma.storyLike.delete({ where: { id: existing.id } }),
-        prisma.story.update({ where: { id: storyId }, data: { likes: { decrement: 1 } } }),
-      ]);
-      return res.json({ liked: false });
-    } else {
-      // Like
-      await prisma.$transaction([
-        prisma.storyLike.create({ data: { userId: user.id, storyId } }),
-        prisma.story.update({ where: { id: storyId }, data: { likes: { increment: 1 } } }),
-      ]);
-      return res.json({ liked: true });
-    }
+      if (existing) {
+        await tx.storyLike.delete({ where: { id: existing.id } });
+        await tx.story.update({ where: { id: storyId }, data: { likes: { decrement: 1 } } });
+        return { liked: false };
+      } else {
+        await tx.storyLike.create({ data: { userId: user.id, storyId } });
+        await tx.story.update({ where: { id: storyId }, data: { likes: { increment: 1 } } });
+        return { liked: true };
+      }
+    });
+    return res.json(result);
   } catch (error) {
     console.error("Error toggling like:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -79,33 +77,36 @@ router.post("/:id/rate", authRequired, async (req: AuthRequest, res: Response) =
       return res.status(403).json({ error: "Truyện chưa được duyệt" });
     }
 
-    // Upsert rating
-    await prisma.rating.upsert({
-      where: { userId_storyId: { userId: user.id, storyId } },
-      create: { userId: user.id, storyId, score },
-      update: { score },
-    });
+    // Upsert rating + recalculate average in a single transaction
+    const ratingResult = await prisma.$transaction(async (tx) => {
+      await tx.rating.upsert({
+        where: { userId_storyId: { userId: user.id, storyId } },
+        create: { userId: user.id, storyId, score },
+        update: { score },
+      });
 
-    // Recalculate average rating
-    const agg = await prisma.rating.aggregate({
-      where: { storyId },
-      _avg: { score: true },
-      _count: { score: true },
-    });
+      const agg = await tx.rating.aggregate({
+        where: { storyId },
+        _avg: { score: true },
+        _count: { score: true },
+      });
 
-    await prisma.story.update({
-      where: { id: storyId },
-      data: {
-        averageRating: Math.round((agg._avg.score || 0) * 10) / 10,
-        ratingCount: agg._count.score,
-      },
+      const averageRating = Math.round((agg._avg.score || 0) * 10) / 10;
+      const ratingCount = agg._count.score;
+
+      await tx.story.update({
+        where: { id: storyId },
+        data: { averageRating, ratingCount },
+      });
+
+      return { averageRating, ratingCount };
     });
 
     res.json({
       success: true,
       userScore: score,
-      averageRating: Math.round((agg._avg.score || 0) * 10) / 10,
-      ratingCount: agg._count.score,
+      averageRating: ratingResult.averageRating,
+      ratingCount: ratingResult.ratingCount,
     });
   } catch (error) {
     console.error("Error rating story:", error);

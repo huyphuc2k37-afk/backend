@@ -406,7 +406,7 @@ router.put("/chapters/approve-bulk", authRequired, modRequired, async (req: Auth
       return res.status(400).json({ error: "Danh sách chương trống" });
     }
 
-    await prisma.chapter.updateMany({
+    const result = await prisma.chapter.updateMany({
       where: { id: { in: chapterIds }, approvalStatus: "pending" },
       data: {
         approvalStatus: "approved",
@@ -416,7 +416,37 @@ router.put("/chapters/approve-bulk", authRequired, modRequired, async (req: Auth
       },
     });
 
-    res.json({ message: `Đã duyệt ${chapterIds.length} chương` });
+    // Notify authors about bulk-approved chapters
+    try {
+      const chapters = await prisma.chapter.findMany({
+        where: { id: { in: chapterIds } },
+        select: {
+          number: true,
+          title: true,
+          story: { select: { id: true, title: true, authorId: true } },
+        },
+      });
+      // Group by author to send one notification per author
+      const byAuthor: Record<string, { storyTitle: string; count: number; storyId: string }> = {};
+      for (const ch of chapters) {
+        const aid = ch.story.authorId;
+        if (!byAuthor[aid]) byAuthor[aid] = { storyTitle: ch.story.title, count: 0, storyId: ch.story.id };
+        byAuthor[aid].count++;
+      }
+      for (const [authorId, info] of Object.entries(byAuthor)) {
+        await prisma.notification.create({
+          data: {
+            userId: authorId,
+            type: "system",
+            title: "Chương đã được duyệt \u2705",
+            message: `${info.count} chương của truyện "${info.storyTitle}" đã được duyệt.`,
+            link: `/write/${info.storyId}`,
+          },
+        }).catch(() => {});
+      }
+    } catch {}
+
+    res.json({ message: `Đã duyệt ${chapterIds.length} chương`, approved: result.count });
   } catch (error) {
     console.error("Error bulk approving chapters:", error);
     res.status(500).json({ error: "Internal server error" });

@@ -72,20 +72,15 @@ router.post("/", authRequired, async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ error: "Chỉ có thể theo dõi tác giả" });
     }
 
-    // Create follow (upsert to avoid duplicate errors)
-    await prisma.follow.create({
-      data: {
-        followerId: user.id,
-        followingId: authorId,
-      },
+    // Upsert to avoid duplicate errors
+    await prisma.follow.upsert({
+      where: { followerId_followingId: { followerId: user.id, followingId: authorId } },
+      create: { followerId: user.id, followingId: authorId },
+      update: {},  // already following, do nothing
     });
 
     res.json({ success: true });
   } catch (error: any) {
-    // Handle unique constraint violation (already following)
-    if (error?.code === "P2002") {
-      return res.json({ success: true, message: "Already following" });
-    }
     console.error("Error following author:", error);
     res.status(500).json({ error: "Internal server error" });
   }
