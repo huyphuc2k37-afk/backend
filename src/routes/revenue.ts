@@ -205,23 +205,36 @@ router.post("/withdraw", authRequired, async (req: AuthRequest, res: Response) =
     // Quy đổi: 1 xu = 1 VNĐ
     const moneyAmount = amount;
 
-    // Trừ xu tạm thời khi yêu cầu rút
-    const [withdrawal] = await prisma.$transaction([
-      prisma.withdrawal.create({
-        data: {
-          amount,
-          moneyAmount,
-          bankName,
-          bankAccount,
-          bankHolder,
-          userId: user.id,
-        },
-      }),
-      prisma.user.update({
-        where: { id: user.id },
-        data: { coinBalance: { decrement: amount } },
-      }),
-    ]);
+    // Trừ xu tạm thời khi yêu cầu rút — dùng interactive transaction để chống race condition
+    let withdrawal: any;
+    try {
+      withdrawal = await prisma.$transaction(async (tx) => {
+        const freshUser = await tx.user.findUnique({ where: { id: user.id }, select: { coinBalance: true } });
+        if (!freshUser || freshUser.coinBalance < amount) {
+          throw new Error("INSUFFICIENT_BALANCE");
+        }
+        const w = await tx.withdrawal.create({
+          data: {
+            amount,
+            moneyAmount,
+            bankName,
+            bankAccount,
+            bankHolder,
+            userId: user.id,
+          },
+        });
+        await tx.user.update({
+          where: { id: user.id },
+          data: { coinBalance: { decrement: amount } },
+        });
+        return w;
+      });
+    } catch (txError: any) {
+      if (txError.message === "INSUFFICIENT_BALANCE") {
+        return res.status(400).json({ error: "Insufficient balance" });
+      }
+      throw txError;
+    }
 
     // Notify admin via Telegram (fire-and-forget)
     notifyNewWithdrawal({

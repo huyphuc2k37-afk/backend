@@ -99,37 +99,50 @@ router.post("/:id/gift", authRequired, async (req: AuthRequest, res: Response) =
 
     const split = splitRevenue(coins);
 
-    const [updatedSender] = await prisma.$transaction([
-      prisma.user.update({
-        where: { id: sender.id },
-        data: { coinBalance: { decrement: coins } },
-        select: { coinBalance: true, id: true },
-      }),
-      prisma.user.update({
-        where: { id: author.id },
-        data: { coinBalance: { increment: split.author } },
-        select: { id: true },
-      }),
-      prisma.authorEarning.create({
-        data: {
-          type: "tip",
-          amount: split.author,
-          authorId: author.id,
-          fromUserId: sender.id,
-        },
-      }),
-      prisma.platformEarning.create({
-        data: {
-          type: "gift",
-          grossAmount: split.gross,
-          authorAmount: split.author,
-          platformAmount: split.platform,
-          taxAmount: split.tax,
-          authorId: author.id,
-          fromUserId: sender.id,
-        },
-      }),
-    ]);
+    // Use interactive transaction with balance guard to prevent race condition
+    let senderBalance: number;
+    try {
+      senderBalance = await prisma.$transaction(async (tx) => {
+        const freshSender = await tx.user.findUnique({ where: { id: sender.id }, select: { coinBalance: true } });
+        if (!freshSender || freshSender.coinBalance < coins) {
+          throw new Error("INSUFFICIENT_BALANCE");
+        }
+        const updated = await tx.user.update({
+          where: { id: sender.id },
+          data: { coinBalance: { decrement: coins } },
+          select: { coinBalance: true },
+        });
+        await tx.user.update({
+          where: { id: author.id },
+          data: { coinBalance: { increment: split.author } },
+        });
+        await tx.authorEarning.create({
+          data: {
+            type: "tip",
+            amount: split.author,
+            authorId: author.id,
+            fromUserId: sender.id,
+          },
+        });
+        await tx.platformEarning.create({
+          data: {
+            type: "gift",
+            grossAmount: split.gross,
+            authorAmount: split.author,
+            platformAmount: split.platform,
+            taxAmount: split.tax,
+            authorId: author.id,
+            fromUserId: sender.id,
+          },
+        });
+        return updated.coinBalance;
+      });
+    } catch (txError: any) {
+      if (txError.message === "INSUFFICIENT_BALANCE") {
+        return res.status(400).json({ error: "Insufficient balance" });
+      }
+      throw txError;
+    }
 
     await createNotificationSafe({
       data: {
@@ -191,7 +204,7 @@ router.post("/:id/gift", authRequired, async (req: AuthRequest, res: Response) =
       console.error("[Referral] gift commission error (non-blocking):", refErr);
     }
 
-    res.json({ success: true, senderBalance: updatedSender.coinBalance });
+    res.json({ success: true, senderBalance: senderBalance });
   } catch (error) {
     console.error("Error gifting coins:", error);
     res.status(500).json({ error: "Internal server error" });
