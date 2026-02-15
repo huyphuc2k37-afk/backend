@@ -29,6 +29,7 @@ router.get("/", authRequired, async (req: AuthRequest, res: Response) => {
         stories: {
           select: { id: true, title: true, slug: true, views: true, likes: true, status: true, approvalStatus: true, createdAt: true },
           orderBy: { updatedAt: "desc" },
+          take: 100,
         },
         _count: { select: { stories: true, bookmarks: true, comments: true } },
       },
@@ -48,6 +49,7 @@ router.get("/", authRequired, async (req: AuthRequest, res: Response) => {
           stories: {
             select: { id: true, title: true, slug: true, views: true, likes: true, status: true, approvalStatus: true, createdAt: true },
             orderBy: { updatedAt: "desc" },
+            take: 100,
           },
           _count: { select: { stories: true, bookmarks: true, comments: true } },
         },
@@ -91,7 +93,9 @@ router.get("/", authRequired, async (req: AuthRequest, res: Response) => {
       });
     }
 
-    res.json({ ...user, ...referralData });
+    // Never leak password hash
+    const { password: _pw, ...safeUser } = user as any;
+    res.json({ ...safeUser, ...referralData });
   } catch (error) {
     console.error("Error fetching profile:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -123,7 +127,20 @@ router.put("/", authRequired, async (req: AuthRequest, res: Response) => {
       }
       data.bio = bio;
     }
-    if (image !== undefined) data.image = image;
+    if (image !== undefined) {
+      if (typeof image === "string" && image.length > 0) {
+        // Only allow https URLs or data URIs (max 500KB)
+        if (!image.startsWith("https://") && !image.startsWith("data:image/")) {
+          return res.status(400).json({ error: "URL ảnh không hợp lệ" });
+        }
+        if (image.length > 500000) {
+          return res.status(400).json({ error: "URL ảnh quá dài" });
+        }
+        data.image = image;
+      } else {
+        data.image = null;
+      }
+    }
     if (role === "author") {
       if (existing.role === "admin" || existing.role === "moderator") {
         return res.status(400).json({ error: "Không thể thay đổi vai trò hiện tại" });
@@ -168,7 +185,8 @@ router.put("/", authRequired, async (req: AuthRequest, res: Response) => {
       data,
     });
 
-    res.json(user);
+    const { password: _pw, ...safeUser } = user as any;
+    res.json(safeUser);
   } catch (error) {
     console.error("Error updating profile:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -257,6 +275,7 @@ router.get("/referral-stats", authRequired, async (req: AuthRequest, res: Respon
       where: { referredById: user.id },
       select: { id: true, name: true, role: true, createdAt: true },
       orderBy: { createdAt: "desc" },
+      take: 200,
     });
 
     // Tổng hoa hồng

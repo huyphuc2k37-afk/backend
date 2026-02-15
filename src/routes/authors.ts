@@ -33,20 +33,8 @@ router.get("/:id", async (req, res: Response) => {
       return res.status(404).json({ error: "Author not found" });
     }
 
-    // Auto-generate referral code for existing authors who don't have one
-    if (!author.referralCode) {
-      const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-      for (let attempt = 0; attempt < 10; attempt++) {
-        let code = "REF";
-        for (let i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)];
-        const exists = await prisma.user.findUnique({ where: { referralCode: code } });
-        if (!exists) {
-          await prisma.user.update({ where: { id: author.id }, data: { referralCode: code } });
-          (author as any).referralCode = code;
-          break;
-        }
-      }
-    }
+    // Don't auto-generate referral code in public endpoint — handled in profile route
+    // Just return author without referralCode to non-authed users if missing
 
     const stories = await prisma.story.findMany({
       where: { authorId: author.id, approvalStatus: "approved" },

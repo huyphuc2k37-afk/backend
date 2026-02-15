@@ -32,10 +32,11 @@ router.get("/", authRequired, async (req: AuthRequest, res: Response) => {
 
     const dateWhere = periodFilter ? { createdAt: { gte: periodFilter } } : {};
 
-    // Lấy tất cả earnings theo period
+    // Lấy earnings theo period (limit 500 for recentSales and breakdown)
     const allEarnings = await prisma.authorEarning.findMany({
       where: { authorId: user.id, ...dateWhere },
       orderBy: { createdAt: "desc" },
+      take: 500,
     });
 
     // Tổng doanh thu (tất cả thời gian)
@@ -168,6 +169,7 @@ router.get("/withdrawals", authRequired, async (req: AuthRequest, res: Response)
     const withdrawals = await prisma.withdrawal.findMany({
       where: { userId: user.id },
       orderBy: { createdAt: "desc" },
+      take: 100,
     });
 
     res.json({ balance: user.coinBalance, withdrawals });

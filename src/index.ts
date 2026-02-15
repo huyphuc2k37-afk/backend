@@ -2,6 +2,7 @@ import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import compression from "compression";
+import rateLimit from "express-rate-limit";
 
 // Import routes
 import storiesRouter from "./routes/stories";
@@ -101,6 +102,40 @@ app.use(
 app.use(compression());
 app.use(express.json({ limit: "10mb" }));
 
+// ─── Rate Limiting ───────────────────────────────
+// General: 200 requests per minute per IP
+const generalLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 200,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Quá nhiều yêu cầu, vui lòng thử lại sau" },
+});
+app.use("/api", generalLimiter);
+
+// Strict: 10 requests per minute for auth endpoints (login, register, resend)
+const authLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Quá nhiều yêu cầu đăng nhập/đăng ký, vui lòng thử lại sau 1 phút" },
+});
+app.use("/api/auth/login", authLimiter);
+app.use("/api/auth/register", authLimiter);
+app.use("/api/auth/resend", authLimiter);
+
+// Write: 30 requests per minute for write operations
+const writeLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Quá nhiều yêu cầu, vui lòng thử lại sau" },
+});
+app.use("/api/comments", writeLimiter);
+app.use("/api/wallet", writeLimiter);
+
 // ─── Health check ────────────────────────────────
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
@@ -142,10 +177,21 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
 });
 
 // ─── Start server ────────────────────────────────
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`🚀 VStory Backend running at http://localhost:${PORT}`);
   console.log(`📖 API docs: http://localhost:${PORT}/api/health`);
   startTelegramPolling();
 });
+
+// ─── Graceful shutdown ───────────────────────────
+import { stopTelegramPolling } from "./lib/telegram";
+const shutdown = () => {
+  console.log("Shutting down gracefully...");
+  stopTelegramPolling();
+  server.close();
+  process.exit(0);
+};
+process.on("SIGTERM", shutdown);
+process.on("SIGINT", shutdown);
 
 export default app;

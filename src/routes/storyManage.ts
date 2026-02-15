@@ -65,6 +65,7 @@ router.get("/stories", authRequired, async (req: AuthRequest, res: Response) => 
     const stories = await prisma.story.findMany({
       where: { authorId: user.id },
       orderBy: { updatedAt: "desc" },
+      take: 200,
       select: {
         id: true,
         title: true,

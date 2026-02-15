@@ -109,7 +109,7 @@ router.put("/stats/revenue", authRequired, adminRequired, async (req: AuthReques
 router.get("/users", authRequired, adminRequired, async (req: AuthRequest, res: Response) => {
   try {
     const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 20;
+    const limit = Math.min(100, parseInt(req.query.limit as string) || 20);
     const search = (req.query.search as string) || "";
     const role = req.query.role as string;
 
@@ -158,6 +158,7 @@ router.put("/users/:id", authRequired, adminRequired, async (req: AuthRequest, r
     const user = await prisma.user.update({
       where: { id: req.params.id },
       data: { role },
+      select: { id: true, name: true, email: true, image: true, role: true, coinBalance: true, createdAt: true },
     });
     res.json(user);
   } catch (error) {
@@ -258,7 +259,7 @@ router.delete("/users", authRequired, adminRequired, async (req: AuthRequest, re
 router.get("/stories", authRequired, adminRequired, async (req: AuthRequest, res: Response) => {
   try {
     const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 20;
+    const limit = Math.min(100, parseInt(req.query.limit as string) || 20);
     const search = (req.query.search as string) || "";
 
     const where: any = {};
@@ -342,7 +343,7 @@ router.delete("/chapters/:id", authRequired, adminRequired, async (req: AuthRequ
 router.get("/deposits", authRequired, adminRequired, async (req: AuthRequest, res: Response) => {
   try {
     const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 20;
+    const limit = Math.min(100, parseInt(req.query.limit as string) || 20);
     const status = req.query.status as string;
 
     const where: any = {};
@@ -500,7 +501,7 @@ router.put("/deposits/:id", authRequired, adminRequired, async (req: AuthRequest
 router.get("/withdrawals", authRequired, adminRequired, async (req: AuthRequest, res: Response) => {
   try {
     const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 20;
+    const limit = Math.min(100, parseInt(req.query.limit as string) || 20);
     const status = req.query.status as string;
 
     const where: any = {};
@@ -620,7 +621,7 @@ router.post("/notifications/broadcast", authRequired, adminRequired, async (req:
       return res.status(400).json({ error: "Title and message are required" });
     }
 
-    const users = await prisma.user.findMany({ select: { id: true } });
+    const users = await prisma.user.findMany({ select: { id: true }, take: 50000 });
     if (users.length === 0) return res.json({ success: true, count: 0 });
 
     const result = await prisma.notification.createMany({

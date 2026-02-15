@@ -43,8 +43,8 @@ router.get("/stats", authRequired, modRequired, async (_req: AuthRequest, res: R
 router.get("/stories", authRequired, modRequired, async (req: AuthRequest, res: Response) => {
   try {
     const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 20;
-    const status = (req.query.status as string) || "pending"; // pending | approved | rejected | all
+    const limit = Math.min(100, parseInt(req.query.limit as string) || 20);
+    const status = (req.query.status as string) || "pending";
     const search = (req.query.search as string) || "";
 
     const where: any = {};
@@ -248,7 +248,7 @@ router.get("/chapters/stats", authRequired, modRequired, async (_req: AuthReques
 router.get("/chapters", authRequired, modRequired, async (req: AuthRequest, res: Response) => {
   try {
     const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 20;
+    const limit = Math.min(100, parseInt(req.query.limit as string) || 20);
     const status = (req.query.status as string) || "pending";
     const search = (req.query.search as string) || "";
 
@@ -426,8 +426,19 @@ router.put("/chapters/approve-bulk", authRequired, modRequired, async (req: Auth
       return res.status(400).json({ error: "Danh sách chương trống" });
     }
 
+    // Block self-moderation: filter out chapters authored by the moderator
+    const ownChapters = await prisma.chapter.findMany({
+      where: { id: { in: chapterIds }, story: { authorId: modUser.id } },
+      select: { id: true },
+    });
+    const ownIds = new Set(ownChapters.map((c: { id: string }) => c.id));
+    const safeIds = chapterIds.filter((id: string) => !ownIds.has(id));
+    if (safeIds.length === 0) {
+      return res.status(403).json({ error: "Không thể tự duyệt chương của chính mình" });
+    }
+
     const result = await prisma.chapter.updateMany({
-      where: { id: { in: chapterIds }, approvalStatus: "pending" },
+      where: { id: { in: safeIds }, approvalStatus: "pending" },
       data: {
         approvalStatus: "approved",
         rejectionReason: null,

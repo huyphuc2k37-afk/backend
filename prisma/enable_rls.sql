@@ -72,3 +72,7 @@ CREATE POLICY "Allow all for postgres" ON public."PlatformEarning" FOR ALL TO po
 -- AuthorEarning
 ALTER TABLE IF EXISTS public."AuthorEarning" ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Allow all for postgres" ON public."AuthorEarning" FOR ALL TO postgres USING (true) WITH CHECK (true);
+
+-- ReferralEarning
+ALTER TABLE IF EXISTS public."ReferralEarning" ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all for postgres" ON public."ReferralEarning" FOR ALL TO postgres USING (true) WITH CHECK (true);

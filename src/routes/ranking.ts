@@ -17,7 +17,7 @@ router.get("/", async (req: Request, res: Response) => {
     const stories = await prisma.story.findMany({
       where: { approvalStatus: "approved" },
       orderBy,
-      take: parseInt(limit as string),
+      take: Math.min(100, Math.max(1, parseInt(limit as string) || 20)),
       select: {
         id: true,
         title: true,

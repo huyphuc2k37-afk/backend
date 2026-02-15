@@ -55,6 +55,7 @@ router.get("/", authRequired, async (req: AuthRequest, res: Response) => {
         },
       },
       orderBy: { createdAt: "desc" },
+      take: 200,
     });
 
     res.json(bookmarks);

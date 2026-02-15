@@ -7,9 +7,7 @@
  */
 
 import https from "https";
-import { PrismaClient } from ".prisma/client";
-
-const prisma = new PrismaClient();
+import prisma from "./prisma";
 
 const BOT_TOKEN = (process.env.TELEGRAM_BOT_TOKEN || "").trim();
 const CHAT_ID = (process.env.TELEGRAM_CHAT_ID || "").trim();
@@ -207,16 +205,18 @@ async function handleCallback(callbackQueryId: string, data: string, chatId: num
       }
 
       if (action === "approve") {
-        await prisma.$transaction([
-          prisma.deposit.update({
+        await prisma.$transaction(async (tx) => {
+          const fresh = await tx.deposit.findUnique({ where: { id }, select: { status: true } });
+          if (!fresh || fresh.status !== "pending") throw new Error("ALREADY_PROCESSED");
+          await tx.deposit.update({
             where: { id },
             data: { status: "approved", adminNote: "Duyệt qua Telegram" },
-          }),
-          prisma.user.update({
+          });
+          await tx.user.update({
             where: { id: deposit.userId },
             data: { coinBalance: { increment: deposit.coins } },
-          }),
-        ]);
+          });
+        });
 
         await createNotificationSafe({
           data: {
@@ -272,12 +272,14 @@ async function handleCallback(callbackQueryId: string, data: string, chatId: num
       }
 
       if (action === "approve") {
-        await prisma.$transaction([
-          prisma.withdrawal.update({
+        await prisma.$transaction(async (tx) => {
+          const fresh = await tx.withdrawal.findUnique({ where: { id }, select: { status: true } });
+          if (!fresh || fresh.status !== "pending") throw new Error("ALREADY_PROCESSED");
+          await tx.withdrawal.update({
             where: { id },
             data: { status: "approved", adminNote: "Duyệt qua Telegram" },
-          }),
-        ]);
+          });
+        });
 
         await createNotificationSafe({
           data: {
@@ -298,16 +300,18 @@ async function handleCallback(callbackQueryId: string, data: string, chatId: num
         );
       } else {
         // Từ chối → hoàn xu
-        await prisma.$transaction([
-          prisma.withdrawal.update({
+        await prisma.$transaction(async (tx) => {
+          const fresh = await tx.withdrawal.findUnique({ where: { id }, select: { status: true } });
+          if (!fresh || fresh.status !== "pending") throw new Error("ALREADY_PROCESSED");
+          await tx.withdrawal.update({
             where: { id },
             data: { status: "rejected", adminNote: "Từ chối qua Telegram" },
-          }),
-          prisma.user.update({
+          });
+          await tx.user.update({
             where: { id: withdrawal.userId },
             data: { coinBalance: { increment: withdrawal.amount } },
-          }),
-        ]);
+          });
+        });
 
         await createNotificationSafe({
           data: {

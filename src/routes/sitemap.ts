@@ -16,6 +16,7 @@ router.get("/", async (req: Request, res: Response) => {
         where: { approvalStatus: "approved" },
         select: { slug: true, updatedAt: true },
         orderBy: { updatedAt: "desc" },
+        take: 50000,
       }),
       prisma.chapter.findMany({
         where: {
@@ -28,6 +29,7 @@ router.get("/", async (req: Request, res: Response) => {
           story: { select: { slug: true } },
         },
         orderBy: { updatedAt: "desc" },
+        take: 50000,
       }),
     ]);
 
