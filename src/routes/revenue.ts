@@ -165,6 +165,9 @@ router.get("/withdrawals", authRequired, async (req: AuthRequest, res: Response)
       where: { email: req.user!.email },
     });
     if (!user) return res.status(404).json({ error: "User not found" });
+    if (user.role !== "author" && user.role !== "admin") {
+      return res.status(403).json({ error: "Author only" });
+    }
 
     const withdrawals = await prisma.withdrawal.findMany({
       where: { userId: user.id },

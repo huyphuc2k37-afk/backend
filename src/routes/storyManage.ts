@@ -149,6 +149,11 @@ router.post("/stories", authRequired, async (req: AuthRequest, res: Response) =>
       return res.status(400).json({ error: "Thiếu thông tin bắt buộc: tên, slug, mô tả, thể loại" });
     }
 
+    // Validate slug format: only lowercase letters, numbers, and hyphens
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug) || slug.length > 200) {
+      return res.status(400).json({ error: "Slug không hợp lệ. Chỉ chấp nhận chữ thường, số và dấu gạch ngang (tối đa 200 ký tự)" });
+    }
+
     // Process cover image: compress first, upload after story is created (need ID for path)
     let compressedCover: string | undefined;
     if (coverImage) {
@@ -160,9 +165,9 @@ router.post("/stories", authRequired, async (req: AuthRequest, res: Response) =>
     const story = await prisma.story.create({
       data: {
         title, slug, description, coverImage: compressedCover, genre, tags: sanitizedTags ?? null,
-        theme, expectedChapters: expectedChapters ? parseInt(expectedChapters) : null,
+        theme, expectedChapters: expectedChapters ? (parseInt(expectedChapters) || null) : null,
         worldBuilding, characters, plotOutline,
-        targetAudience, postSchedule, isAdult: isAdult || false,
+        targetAudience, postSchedule, isAdult: isAdult === true,
         approvalStatus: "pending",
         authorId: user.id,
       },
@@ -233,13 +238,13 @@ router.put("/stories/:id", authRequired, async (req: AuthRequest, res: Response)
       data.status = status;
     }
     if (theme !== undefined) data.theme = theme;
-    if (expectedChapters !== undefined) data.expectedChapters = expectedChapters ? parseInt(expectedChapters) : null;
+    if (expectedChapters !== undefined) data.expectedChapters = expectedChapters ? (parseInt(expectedChapters) || null) : null;
     if (worldBuilding !== undefined) data.worldBuilding = worldBuilding;
     if (characters !== undefined) data.characters = characters;
     if (plotOutline !== undefined) data.plotOutline = plotOutline;
     if (targetAudience !== undefined) data.targetAudience = targetAudience;
     if (postSchedule !== undefined) data.postSchedule = postSchedule;
-    if (isAdult !== undefined) data.isAdult = isAdult;
+    if (isAdult !== undefined) data.isAdult = isAdult === true;
 
     // Reset to pending when author edits substantive content of approved/rejected story
     if (story.approvalStatus === "rejected" || story.approvalStatus === "approved") {
@@ -333,9 +338,11 @@ router.post("/stories/:storyId/chapters", authRequired, async (req: AuthRequest,
     const nextNumber = (lastChapter?.number || 0) + 1;
 
     // Validate lock rules: first 10 chapters must be free, price 100-5000
+    // Count total chapters (not just number) to prevent bypass via deletion
+    const totalChapters = await prisma.chapter.count({ where: { storyId: req.params.storyId } });
     let finalIsLocked = isLocked || false;
     let finalPrice = price || 0;
-    if (nextNumber <= 10) {
+    if (totalChapters < 10) {
       finalIsLocked = false;
       finalPrice = 0;
     } else if (finalIsLocked) {

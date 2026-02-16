@@ -228,6 +228,53 @@ async function handleCallback(callbackQueryId: string, data: string, chatId: num
           },
         });
 
+        // ── Hoa hồng referral 2% trên nạp xu (same as admin.ts) ──
+        try {
+          const depositUser = await prisma.user.findUnique({
+            where: { id: deposit.userId },
+            select: { referredById: true, name: true },
+          });
+          if (depositUser?.referredById) {
+            const referrer = await prisma.user.findUnique({
+              where: { id: depositUser.referredById },
+              select: { id: true, role: true },
+            });
+            if (referrer && (referrer.role === "author" || referrer.role === "admin")) {
+              const commission = Math.floor(deposit.coins * 0.02);
+              if (commission >= 1) {
+                await prisma.$transaction([
+                  prisma.user.update({
+                    where: { id: referrer.id },
+                    data: { coinBalance: { increment: commission } },
+                  }),
+                  prisma.referralEarning.create({
+                    data: {
+                      type: "deposit_commission",
+                      amount: commission,
+                      sourceAmount: deposit.coins,
+                      rate: 0.02,
+                      referrerId: referrer.id,
+                      fromUserId: deposit.userId,
+                      depositId: deposit.id,
+                    },
+                  }),
+                ]);
+                await createNotificationSafe({
+                  data: {
+                    userId: referrer.id,
+                    type: "wallet",
+                    title: "Hoa hồng giới thiệu — nạp xu",
+                    message: `Người bạn giới thiệu vừa nạp ${fmtVND(deposit.coins)} xu. Bạn nhận được ${fmtVND(commission)} xu hoa hồng (2%).`,
+                    link: "/profile",
+                  },
+                });
+              }
+            }
+          }
+        } catch (refErr) {
+          console.error("[Telegram] referral commission error (non-blocking):", refErr);
+        }
+
         await answerCallbackQuery(callbackQueryId, `✅ Đã duyệt nạp ${fmtVND(deposit.coins)} xu`);
         await editMessageText(chatId, messageId,
           `💰 <b>NẠP XU — ĐÃ DUYỆT ✅</b>\n\n` +

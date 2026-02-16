@@ -83,7 +83,7 @@ router.get("/liked", authRequired, async (req: AuthRequest, res: Response) => {
     const idsStr = req.query.ids as string;
     if (!idsStr) return res.json({ likedIds: [] });
 
-    const ids = idsStr.split(",").filter(Boolean);
+    const ids = idsStr.split(",").filter(Boolean).slice(0, 200); // Cap at 200 IDs to prevent abuse
     const likes = await prisma.commentLike.findMany({
       where: { userId: user.id, commentId: { in: ids } },
       select: { commentId: true },
@@ -219,6 +219,8 @@ router.post("/:id/like", authRequired, async (req: AuthRequest, res: Response) =
       if (existing) {
         await tx.commentLike.delete({ where: { id: existing.id } });
         await tx.comment.update({ where: { id: commentId }, data: { likes: { decrement: 1 } } });
+        // Guard against negative likes from counter drift
+        await tx.comment.updateMany({ where: { id: commentId, likes: { lt: 0 } }, data: { likes: 0 } });
         return { liked: false };
       } else {
         await tx.commentLike.create({ data: { userId: user.id, commentId } });

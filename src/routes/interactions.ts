@@ -27,6 +27,8 @@ router.post("/:id/like", authRequired, async (req: AuthRequest, res: Response) =
       if (existing) {
         await tx.storyLike.delete({ where: { id: existing.id } });
         await tx.story.update({ where: { id: storyId }, data: { likes: { decrement: 1 } } });
+        // Guard against negative likes from counter drift
+        await tx.story.updateMany({ where: { id: storyId, likes: { lt: 0 } }, data: { likes: 0 } });
         return { liked: false };
       } else {
         await tx.storyLike.create({ data: { userId: user.id, storyId } });

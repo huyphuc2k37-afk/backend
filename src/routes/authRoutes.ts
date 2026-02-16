@@ -43,6 +43,9 @@ router.post("/register", async (req: Request, res: Response) => {
     if (password.length < 6 || password.trim().length < 6) {
       return res.status(400).json({ error: "Mật khẩu phải có ít nhất 6 ký tự (không tính khoảng trắng)" });
     }
+    if (password.length > 72) {
+      return res.status(400).json({ error: "Mật khẩu tối đa 72 ký tự" });
+    }
 
     // Check if email already exists
     const existing = await prisma.user.findUnique({ where: { email } });

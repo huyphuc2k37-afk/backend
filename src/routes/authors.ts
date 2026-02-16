@@ -50,6 +50,7 @@ router.get("/:id", async (req, res: Response) => {
         _count: { select: { chapters: true, bookmarks: true, comments: true } },
       },
       orderBy: { updatedAt: "desc" },
+      take: 100,
     });
 
     res.json({ author, stories });

@@ -479,7 +479,7 @@ router.put("/chapters/approve-bulk", authRequired, modRequired, async (req: Auth
       }
     } catch {}
 
-    res.json({ message: `Đã duyệt ${chapterIds.length} chương`, approved: result.count });
+    res.json({ message: `Đã duyệt ${safeIds.length} chương`, approved: result.count });
   } catch (error) {
     console.error("Error bulk approving chapters:", error);
     res.status(500).json({ error: "Internal server error" });

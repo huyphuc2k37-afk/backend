@@ -158,6 +158,12 @@ router.post("/deposit", authRequired, async (req: AuthRequest, res: Response) =>
       return res.status(400).json({ error: "Missing required fields" });
     }
 
+    // Validate method against allowlist
+    const ALLOWED_METHODS = ["zalopay", "agribank", "bank", "momo", "vnpay"];
+    if (!ALLOWED_METHODS.includes(method)) {
+      return res.status(400).json({ error: "Phương thức thanh toán không hợp lệ" });
+    }
+
     // Validate deposit values
     const numAmount = Number(amount);
     const numCoins = numAmount; // no promotions: deposit VND == coins

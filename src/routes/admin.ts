@@ -305,6 +305,16 @@ router.get("/stories", authRequired, adminRequired, async (req: AuthRequest, res
 // ─── DELETE /api/admin/stories/:id — xóa truyện ──
 router.delete("/stories/:id", authRequired, adminRequired, async (req: AuthRequest, res: Response) => {
   try {
+    // Warn if story has purchases
+    const purchaseCount = await prisma.chapterPurchase.count({
+      where: { chapter: { storyId: req.params.id } },
+    });
+    if (purchaseCount > 0 && req.query.force !== "true") {
+      return res.status(400).json({
+        error: `Truyện có ${purchaseCount} lượt mua chương. Thêm ?force=true để xác nhận xóa.`,
+        purchaseCount,
+      });
+    }
     await prisma.story.delete({ where: { id: req.params.id } });
     res.json({ success: true });
   } catch (error) {
@@ -331,6 +341,16 @@ router.get("/stories/:id/chapters", authRequired, adminRequired, async (req: Aut
 // ─── DELETE /api/admin/chapters/:id — xóa chương ──
 router.delete("/chapters/:id", authRequired, adminRequired, async (req: AuthRequest, res: Response) => {
   try {
+    // Warn if chapter has purchases
+    const purchaseCount = await prisma.chapterPurchase.count({
+      where: { chapterId: req.params.id },
+    });
+    if (purchaseCount > 0 && req.query.force !== "true") {
+      return res.status(400).json({
+        error: `Chương có ${purchaseCount} lượt mua. Thêm ?force=true để xác nhận xóa.`,
+        purchaseCount,
+      });
+    }
     await prisma.chapter.delete({ where: { id: req.params.id } });
     res.json({ success: true });
   } catch (error) {

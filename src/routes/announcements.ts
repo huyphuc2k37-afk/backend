@@ -22,6 +22,7 @@ router.get("/", async (_req: Request, res: Response) => {
     const announcements = await prisma.announcement.findMany({
       where: { isActive: true },
       orderBy: { createdAt: "desc" },
+      take: 20,
       select: { id: true, message: true, createdAt: true },
     });
     res.json(announcements);
@@ -36,6 +37,7 @@ router.get("/all", authRequired, adminRequired, async (_req: AuthRequest, res: R
   try {
     const announcements = await prisma.announcement.findMany({
       orderBy: { createdAt: "desc" },
+      take: 100,
       include: {
         createdByUser: { select: { id: true, name: true } },
       },

@@ -26,7 +26,7 @@ export function authRequired(req: AuthRequest, res: Response, next: NextFunction
     const secret = process.env.NEXTAUTH_SECRET;
     if (!secret) return res.status(500).json({ error: "Server misconfigured" });
     const decoded = jwt.verify(token, secret) as any;
-    if (!decoded.email) {
+    if (!decoded.email || typeof decoded.email !== "string") {
       return res.status(401).json({ error: "Invalid token: missing email" });
     }
     req.user = {
