@@ -1,8 +1,27 @@
 import "dotenv/config";
+import * as Sentry from "@sentry/node";
 import express from "express";
 import cors from "cors";
 import compression from "compression";
 import rateLimit from "express-rate-limit";
+
+// ─── Sentry Error Monitoring ─────────────────────
+if (process.env.SENTRY_DSN) {
+  Sentry.init({
+    dsn: process.env.SENTRY_DSN,
+    environment: process.env.NODE_ENV || "development",
+    tracesSampleRate: 0.1, // 10% of transactions
+    beforeSend(event) {
+      // Strip sensitive data
+      if (event.request?.headers) {
+        delete event.request.headers["authorization"];
+        delete event.request.headers["cookie"];
+      }
+      return event;
+    },
+  });
+  console.log("🔍 Sentry error monitoring enabled");
+}
 
 // Import routes
 import storiesRouter from "./routes/stories";
@@ -171,6 +190,10 @@ app.use((_req, res) => {
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   if (err.message?.startsWith("CORS blocked")) {
     return res.status(403).json({ error: "Origin not allowed" });
+  }
+  // Report to Sentry
+  if (process.env.SENTRY_DSN) {
+    Sentry.captureException(err);
   }
   console.error("Unhandled error:", err);
   res.status(500).json({ error: "Internal server error" });

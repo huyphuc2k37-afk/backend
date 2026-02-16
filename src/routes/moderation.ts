@@ -1,6 +1,7 @@
 import { Router, Response, NextFunction } from "express";
 import prisma from "../lib/prisma";
 import { AuthRequest, authRequired } from "../middleware/auth";
+import { invalidateCache } from "../lib/cache";
 
 const router = Router();
 
@@ -166,6 +167,7 @@ router.put("/stories/:id/approve", authRequired, modRequired, async (req: AuthRe
     } catch {}
 
     res.json({ message: "Đã duyệt truyện", story: updated });
+    invalidateCache(`story:${story.slug}`, "stories:*", "ranking:*");
   } catch (error) {
     console.error("Error approving story:", error);
     res.status(500).json({ error: "Internal server error" });

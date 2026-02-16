@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import prisma from "../lib/prisma";
 import { compressBase64Image } from "../lib/compressImage";
+import { cached, SHORT_TTL } from "../lib/cache";
 
 const router = Router();
 
@@ -27,50 +28,55 @@ router.get("/", async (req: Request, res: Response) => {
 
     const pageNum = Math.max(1, parseInt(page as string) || 1);
     const limitNum = Math.min(100, Math.max(1, parseInt(limit as string) || 20));
+    const cacheKey = `stories:${genre || ""}:${status || ""}:${search || ""}:${sort}:${pageNum}:${limitNum}`;
 
-    const [stories, total] = await Promise.all([
-      prisma.story.findMany({
-        where,
-        orderBy,
-        skip: (pageNum - 1) * limitNum,
-        take: limitNum,
-        select: {
-          id: true,
-          title: true,
-          slug: true,
-          description: true,
-          genre: true,
-          tags: true,
-          status: true,
-          views: true,
-          likes: true,
-          isAdult: true,
-          createdAt: true,
-          updatedAt: true,
-          author: { select: { id: true, name: true, image: true } },
-          _count: { select: { chapters: true, bookmarks: true } },
+    const result = await cached(cacheKey, SHORT_TTL, async () => {
+      const [stories, total] = await Promise.all([
+        prisma.story.findMany({
+          where,
+          orderBy,
+          skip: (pageNum - 1) * limitNum,
+          take: limitNum,
+          select: {
+            id: true,
+            title: true,
+            slug: true,
+            description: true,
+            genre: true,
+            tags: true,
+            status: true,
+            views: true,
+            likes: true,
+            isAdult: true,
+            createdAt: true,
+            updatedAt: true,
+            author: { select: { id: true, name: true, image: true } },
+            _count: { select: { chapters: true, bookmarks: true } },
+          },
+        }),
+        prisma.story.count({ where }),
+      ]);
+
+      return {
+        stories,
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          total,
+          totalPages: Math.ceil(total / limitNum),
         },
-      }),
-      prisma.story.count({ where }),
-    ]);
+      };
+    });
 
     res.set("Cache-Control", "public, max-age=60, stale-while-revalidate=120");
-    res.json({
-      stories,
-      pagination: {
-        page: pageNum,
-        limit: limitNum,
-        total,
-        totalPages: Math.ceil(total / limitNum),
-      },
-    });
+    res.json(result);
   } catch (error) {
     console.error("Error fetching stories:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });
 
-// GET /api/stories/:id/cover — serve cover image as binary with caching
+// GET /api/stories/:id/cover — serve cover image (cloud URL redirect or base64 binary)
 router.get("/:id/cover", async (req: Request, res: Response) => {
   try {
     const story = await prisma.story.findUnique({
@@ -82,6 +88,12 @@ router.get("/:id/cover", async (req: Request, res: Response) => {
     // Only serve covers for approved stories
     if (story.approvalStatus !== "approved") return res.status(403).end();
 
+    // If coverImage is a URL (cloud storage), redirect to it
+    if (story.coverImage.startsWith("http://") || story.coverImage.startsWith("https://")) {
+      return res.redirect(301, story.coverImage);
+    }
+
+    // Legacy: base64 data URI — serve as binary
     const match = story.coverImage.match(/^data:(image\/[a-zA-Z+]+);base64,(.+)$/);
     if (!match) return res.status(404).end();
 

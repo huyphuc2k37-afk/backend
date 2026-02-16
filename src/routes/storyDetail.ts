@@ -1,5 +1,6 @@
 import { Router, Request, Response } from "express";
 import prisma from "../lib/prisma";
+import { cached, SHORT_TTL } from "../lib/cache";
 
 const router = Router();
 
@@ -19,33 +20,35 @@ router.get("/:slug", async (req: Request, res: Response) => {
   try {
     const { slug } = req.params;
 
-    const story = await prisma.story.findUnique({
-      where: { slug },
-      select: {
-        id: true,
-        title: true,
-        slug: true,
-        description: true,
-        genre: true,
-        tags: true,
-        status: true,
-        views: true,
-        likes: true,
-        averageRating: true,
-        ratingCount: true,
-        isAdult: true,
-        approvalStatus: true,
-        createdAt: true,
-        updatedAt: true,
-        author: { select: { id: true, name: true, image: true, bio: true } },
-        chapters: {
-          where: { approvalStatus: "approved" },
-          select: { id: true, title: true, number: true, wordCount: true, isLocked: true, price: true, createdAt: true },
-          orderBy: { number: "asc" },
+    const story = await cached(`story:${slug}`, SHORT_TTL, () =>
+      prisma.story.findUnique({
+        where: { slug },
+        select: {
+          id: true,
+          title: true,
+          slug: true,
+          description: true,
+          genre: true,
+          tags: true,
+          status: true,
+          views: true,
+          likes: true,
+          averageRating: true,
+          ratingCount: true,
+          isAdult: true,
+          approvalStatus: true,
+          createdAt: true,
+          updatedAt: true,
+          author: { select: { id: true, name: true, image: true, bio: true } },
+          chapters: {
+            where: { approvalStatus: "approved" },
+            select: { id: true, title: true, number: true, wordCount: true, isLocked: true, price: true, createdAt: true },
+            orderBy: { number: "asc" },
+          },
+          _count: { select: { bookmarks: true, comments: true, storyLikes: true } },
         },
-        _count: { select: { bookmarks: true, comments: true, storyLikes: true } },
-      },
-    });
+      })
+    );
 
     if (!story) {
       return res.status(404).json({ error: "Story not found" });

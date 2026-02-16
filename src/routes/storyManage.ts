@@ -2,6 +2,8 @@ import { Router, Response } from "express";
 import prisma from "../lib/prisma";
 import { authRequired, AuthRequest } from "../middleware/auth";
 import { compressBase64Image } from "../lib/compressImage";
+import { uploadCoverImage, deleteCoverImages, isStorageEnabled } from "../lib/supabaseStorage";
+import { invalidateCache } from "../lib/cache";
 
 const router = Router();
 
@@ -147,8 +149,11 @@ router.post("/stories", authRequired, async (req: AuthRequest, res: Response) =>
       return res.status(400).json({ error: "Thiếu thông tin bắt buộc: tên, slug, mô tả, thể loại" });
     }
 
-    // Compress cover image if provided
-    const compressedCover = coverImage ? await compressBase64Image(coverImage) : undefined;
+    // Process cover image: compress first, upload after story is created (need ID for path)
+    let compressedCover: string | undefined;
+    if (coverImage) {
+      compressedCover = await compressBase64Image(coverImage);
+    }
 
     const sanitizedTags = sanitizeStoryTags(tags);
 
@@ -163,7 +168,22 @@ router.post("/stories", authRequired, async (req: AuthRequest, res: Response) =>
       },
     });
 
+    // Now upload to cloud storage with actual story ID, then update the record
+    if (compressedCover && isStorageEnabled()) {
+      const cloudUrl = await uploadCoverImage(compressedCover, story.id);
+      if (cloudUrl) {
+        await prisma.story.update({
+          where: { id: story.id },
+          data: { coverImage: cloudUrl },
+        });
+        story.coverImage = cloudUrl;
+      }
+    }
+
     res.status(201).json(story);
+
+    // Invalidate caches
+    invalidateCache("stories:*", "ranking:*");
 
     // Notify moderators about new story pending review
     notifyModerators({
@@ -195,7 +215,15 @@ router.put("/stories/:id", authRequired, async (req: AuthRequest, res: Response)
     const data: any = {};
     if (title !== undefined) data.title = title;
     if (description !== undefined) data.description = description;
-    if (coverImage !== undefined) data.coverImage = coverImage ? await compressBase64Image(coverImage) : coverImage;
+    if (coverImage !== undefined) {
+      if (coverImage) {
+        const compressed = await compressBase64Image(coverImage);
+        const cloudUrl = await uploadCoverImage(compressed, req.params.id);
+        data.coverImage = cloudUrl || compressed;
+      } else {
+        data.coverImage = coverImage;
+      }
+    }
     if (genre !== undefined) data.genre = genre;
     if (tags !== undefined) data.tags = sanitizeStoryTags(tags);
     if (status !== undefined) {
@@ -226,6 +254,9 @@ router.put("/stories/:id", authRequired, async (req: AuthRequest, res: Response)
       where: { id: req.params.id },
       data,
     });
+
+    // Invalidate caches for this story
+    invalidateCache(`story:${story.slug}`, "stories:*", "ranking:*");
 
     // Notify moderators if story was re-submitted for review
     if (story.approvalStatus === "rejected" && data.approvalStatus === "pending") {
@@ -264,6 +295,13 @@ router.delete("/stories/:id", authRequired, async (req: AuthRequest, res: Respon
     }
 
     await prisma.story.delete({ where: { id: req.params.id } });
+
+    // Clean up cloud storage covers (fire-and-forget)
+    deleteCoverImages(req.params.id).catch(() => {});
+
+    // Invalidate caches
+    invalidateCache(`story:${story.slug}`, "stories:*", "ranking:*");
+
     res.json({ message: "Đã xóa truyện" });
   } catch (error) {
     console.error("Error deleting story:", error);
