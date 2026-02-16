@@ -79,8 +79,10 @@ router.get("/stories", authRequired, async (req: AuthRequest, res: Response) => 
         isAdult: true,
         approvalStatus: true,
         rejectionReason: true,
+        categoryId: true,
         createdAt: true,
         updatedAt: true,
+        category: { select: { name: true, slug: true } },
         _count: { select: { chapters: true, bookmarks: true, comments: true } },
       },
     });
@@ -108,6 +110,7 @@ router.get("/stories/:id", authRequired, async (req: AuthRequest, res: Response)
         coverImage: true,
         genre: true,
         tags: true,
+        categoryId: true,
         status: true,
         views: true,
         likes: true,
@@ -117,6 +120,10 @@ router.get("/stories/:id", authRequired, async (req: AuthRequest, res: Response)
         createdAt: true,
         updatedAt: true,
         authorId: true,
+        category: { select: { id: true, name: true, slug: true } },
+        storyTags: {
+          select: { tag: { select: { id: true, name: true, slug: true, type: true } } },
+        },
         chapters: {
           orderBy: { number: "asc" },
           select: { id: true, title: true, number: true, wordCount: true, isLocked: true, price: true, approvalStatus: true, rejectionReason: true, createdAt: true, updatedAt: true },
@@ -128,7 +135,11 @@ router.get("/stories/:id", authRequired, async (req: AuthRequest, res: Response)
     if (!story) return res.status(404).json({ error: "Story not found" });
     if (story.authorId !== user.id) return res.status(403).json({ error: "Forbidden" });
 
-    res.json(story);
+    res.json({
+      ...story,
+      storyTagList: story.storyTags?.map((st: any) => st.tag) ?? [],
+      storyTags: undefined,
+    });
   } catch (error) {
     console.error("Error fetching story:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -143,7 +154,7 @@ router.post("/stories", authRequired, async (req: AuthRequest, res: Response) =>
       return res.status(403).json({ error: "Bạn chưa đăng ký làm tác giả" });
     }
 
-    const { title, slug, description, coverImage, genre, tags, theme, expectedChapters, worldBuilding, characters, plotOutline, targetAudience, postSchedule, isAdult } = req.body;
+    const { title, slug, description, coverImage, genre, tags, categoryId, tagIds, theme, expectedChapters, worldBuilding, characters, plotOutline, targetAudience, postSchedule, isAdult } = req.body;
 
     if (!title || !slug || !description || !genre) {
       return res.status(400).json({ error: "Thiếu thông tin bắt buộc: tên, slug, mô tả, thể loại" });
@@ -165,11 +176,15 @@ router.post("/stories", authRequired, async (req: AuthRequest, res: Response) =>
     const story = await prisma.story.create({
       data: {
         title, slug, description, coverImage: compressedCover, genre, tags: sanitizedTags ?? null,
+        ...(categoryId ? { categoryId } : {}),
         theme, expectedChapters: expectedChapters ? (parseInt(expectedChapters) || null) : null,
         worldBuilding, characters, plotOutline,
         targetAudience, postSchedule, isAdult: isAdult === true,
         approvalStatus: "pending",
         authorId: user.id,
+        ...(Array.isArray(tagIds) && tagIds.length > 0
+          ? { storyTags: { create: tagIds.slice(0, 20).map((tid: string) => ({ tagId: tid })) } }
+          : {}),
       },
     });
 
@@ -215,7 +230,7 @@ router.put("/stories/:id", authRequired, async (req: AuthRequest, res: Response)
     if (!story) return res.status(404).json({ error: "Story not found" });
     if (story.authorId !== user.id) return res.status(403).json({ error: "Forbidden" });
 
-    const { title, description, coverImage, genre, tags, status, theme, expectedChapters, worldBuilding, characters, plotOutline, targetAudience, postSchedule, isAdult } = req.body;
+    const { title, description, coverImage, genre, tags, categoryId, tagIds, status, theme, expectedChapters, worldBuilding, characters, plotOutline, targetAudience, postSchedule, isAdult } = req.body;
 
     const data: any = {};
     if (title !== undefined) data.title = title;
@@ -230,6 +245,7 @@ router.put("/stories/:id", authRequired, async (req: AuthRequest, res: Response)
       }
     }
     if (genre !== undefined) data.genre = genre;
+    if (categoryId !== undefined) data.categoryId = categoryId || null;
     if (tags !== undefined) data.tags = sanitizeStoryTags(tags);
     if (status !== undefined) {
       if (!["ongoing", "completed", "paused"].includes(status)) {
@@ -252,6 +268,17 @@ router.put("/stories/:id", authRequired, async (req: AuthRequest, res: Response)
       if (substantiveChange) {
         data.approvalStatus = "pending";
         data.rejectionReason = null;
+      }
+    }
+
+    // Handle tagIds: replace all story-tag associations
+    if (Array.isArray(tagIds)) {
+      await prisma.storyTag.deleteMany({ where: { storyId: req.params.id } });
+      if (tagIds.length > 0) {
+        await prisma.storyTag.createMany({
+          data: tagIds.slice(0, 20).map((tid: string) => ({ storyId: req.params.id, tagId: tid })),
+          skipDuplicates: true,
+        });
       }
     }
 

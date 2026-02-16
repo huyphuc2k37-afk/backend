@@ -109,6 +109,60 @@ model Withdrawal {
   @@index([status])
 }
 
+// ─── Categories (Danh mục chính) ─────────────────
+model Category {
+  id              String    @id @default(cuid())
+  name            String    // Tên hiển thị: "Tình cảm", "Huyền huyễn & Giả tưởng"
+  slug            String    @unique // URL slug: "tinh-cam"
+  description     String?   @db.Text
+  seoTitle        String?   // SEO title cho trang thể loại
+  seoDescription  String?   // SEO meta description
+  icon            String?   // Icon name cho frontend
+  color           String?   // Color hex cho frontend
+  displayOrder    Int       @default(0) // Thứ tự hiển thị
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  stories         Story[]
+
+  @@index([displayOrder])
+}
+
+// ─── Tags (Thẻ tag) ──────────────────────────────
+model Tag {
+  id              String    @id @default(cuid())
+  name            String    // Tên hiển thị: "Ngôn tình", "1x1"
+  slug            String    @unique // URL slug: "ngon-tinh"
+  type            String    @default("genre") // genre | setting | tone | relation | ending | perspective | content | form | mature
+  createdAt       DateTime  @default(now())
+
+  storyTags       StoryTag[]
+
+  @@index([type])
+}
+
+// ─── Story Tags (junction) ───────────────────────
+model StoryTag {
+  id              String    @id @default(cuid())
+
+  storyId         String
+  story           Story     @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  tagId           String
+  tag             Tag       @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@unique([storyId, tagId])
+  @@index([tagId])
+}
+
+// ─── Redirects (301 cho URL cũ) ──────────────────
+model Redirect {
+  id              String    @id @default(cuid())
+  oldPath         String    @unique // /the-loai/ngon-tinh
+  newPath         String    // /the-loai/tinh-cam
+  code            Int       @default(301) // HTTP status code
+  createdAt       DateTime  @default(now())
+}
+
 // ─── Stories ─────────────────────────────────────
 model Story {
   id              String    @id @default(cuid())
@@ -116,17 +170,21 @@ model Story {
   slug            String    @unique
   description     String    @db.Text
   coverImage      String?
-  genre           String    // Tiên hiệp, Kiếm hiệp, etc.
+  genre           String    // legacy: Tiên hiệp, Kiếm hiệp, etc. (kept for backward compat)
   status          String    @default("ongoing") // ongoing | completed | paused
   approvalStatus  String    @default("pending") // pending | approved | rejected
   rejectionReason String?   // lý do từ chối (nếu rejected)
   reviewedBy      String?   // ID moderator đã duyệt
   reviewedAt      DateTime? // thời gian duyệt
-  tags            String?   // comma-separated
+  tags            String?   // legacy: comma-separated (migrated to StoryTag)
   views           Int       @default(0)
   likes           Int       @default(0)
   averageRating   Float     @default(0)
   ratingCount     Int       @default(0)
+
+  // ── Category (new) ──
+  categoryId      String?
+  category        Category? @relation(fields: [categoryId], references: [id])
 
   // ── Đề cương (Outline) ──
   theme           String?   // chủ đề
@@ -151,11 +209,13 @@ model Story {
   comments        Comment[]
   storyLikes      StoryLike[]
   ratings         Rating[]
+  storyTags       StoryTag[]
 
   @@index([authorId])
   @@index([views])
   @@index([likes])
   @@index([genre])
+  @@index([categoryId])
   @@index([updatedAt])
   @@index([status])
   @@index([approvalStatus])

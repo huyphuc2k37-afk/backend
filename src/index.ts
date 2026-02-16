@@ -43,6 +43,8 @@ import interactionsRouter from "./routes/interactions";
 import sitemapRouter from "./routes/sitemap";
 import moderationRouter from "./routes/moderation";
 import announcementsRouter from "./routes/announcements";
+import categoriesRouter from "./routes/categories";
+import tagsRouter from "./routes/tags";
 import { startTelegramPolling } from "./lib/telegram";
 
 const app = express();
@@ -180,6 +182,8 @@ app.use("/api/auth", authRoutes);
 app.use("/api/sitemap", sitemapRouter);
 app.use("/api/mod", moderationRouter);
 app.use("/api/announcements", announcementsRouter);
+app.use("/api/categories", categoriesRouter);
+app.use("/api/tags", tagsRouter);
 
 // ─── 404 handler ─────────────────────────────────
 app.use((_req, res) => {

@@ -41,6 +41,10 @@ router.get("/:slug", async (req: Request, res: Response) => {
           createdAt: true,
           updatedAt: true,
           author: { select: { id: true, name: true, image: true, bio: true } },
+          category: { select: { id: true, name: true, slug: true } },
+          storyTags: {
+            select: { tag: { select: { id: true, name: true, slug: true, type: true } } },
+          },
           chapters: {
             where: { approvalStatus: "approved" },
             select: { id: true, title: true, number: true, wordCount: true, isLocked: true, price: true, createdAt: true },
@@ -79,7 +83,12 @@ router.get("/:slug", async (req: Request, res: Response) => {
       }).catch(() => {});
     }
 
-    res.json(story);
+    // Flatten storyTags for cleaner response
+    const { storyTags, ...rest } = story;
+    res.json({
+      ...rest,
+      storyTagList: storyTags?.map((st: any) => st.tag) ?? [],
+    });
   } catch (error) {
     console.error("Error fetching story:", error);
     res.status(500).json({ error: "Internal server error" });

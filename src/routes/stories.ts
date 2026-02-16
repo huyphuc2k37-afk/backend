@@ -8,11 +8,29 @@ const router = Router();
 // GET /api/stories — list stories with optional filters
 router.get("/", async (req: Request, res: Response) => {
   try {
-    const { genre, status, search, sort = "updatedAt", page = "1", limit = "20" } = req.query;
+    const {
+      genre, category, tags: tagSlugs,
+      status, search, sort = "updatedAt",
+      page = "1", limit = "20",
+      is_paid, is_adult,
+    } = req.query;
 
     const where: any = { approvalStatus: "approved" };
     if (genre) where.genre = genre as string;
+    if (category) {
+      where.category = { slug: category as string };
+    }
+    if (tagSlugs) {
+      const slugs = (tagSlugs as string).split(",").map((t) => t.trim()).filter(Boolean).slice(0, 10);
+      if (slugs.length > 0) {
+        where.storyTags = { some: { tag: { slug: { in: slugs } } } };
+      }
+    }
     if (status) where.status = status as string;
+    if (is_paid === "true") where.chapters = { some: { isLocked: true } };
+    if (is_paid === "false") where.chapters = { none: { isLocked: true } };
+    if (is_adult === "true") where.isAdult = true;
+    if (is_adult === "false") where.isAdult = false;
     if (search) {
       where.OR = [
         { title: { contains: search as string, mode: "insensitive" } },
@@ -23,12 +41,13 @@ router.get("/", async (req: Request, res: Response) => {
 
     const orderBy: any = {};
     if (sort === "views") orderBy.views = "desc";
-    else if (sort === "likes") orderBy.likes = "desc";
+    else if (sort === "likes" || sort === "popular") orderBy.likes = "desc";
+    else if (sort === "new") orderBy.createdAt = "desc";
     else orderBy.updatedAt = "desc";
 
     const pageNum = Math.max(1, parseInt(page as string) || 1);
     const limitNum = Math.min(100, Math.max(1, parseInt(limit as string) || 20));
-    const cacheKey = `stories:${genre || ""}:${status || ""}:${search || ""}:${sort}:${pageNum}:${limitNum}`;
+    const cacheKey = `stories:${genre || ""}:${category || ""}:${tagSlugs || ""}:${status || ""}:${search || ""}:${sort}:${pageNum}:${limitNum}:${is_paid || ""}:${is_adult || ""}`;
 
     const result = await cached(cacheKey, SHORT_TTL, async () => {
       const [stories, total] = await Promise.all([
@@ -51,14 +70,22 @@ router.get("/", async (req: Request, res: Response) => {
             createdAt: true,
             updatedAt: true,
             author: { select: { id: true, name: true, image: true } },
+            category: { select: { name: true, slug: true } },
             _count: { select: { chapters: true, bookmarks: true } },
+            storyTags: {
+              select: { tag: { select: { name: true, slug: true, type: true } } },
+            },
           },
         }),
         prisma.story.count({ where }),
       ]);
 
       return {
-        stories,
+        stories: stories.map((s) => ({
+          ...s,
+          storyTagList: s.storyTags.map((st) => st.tag),
+          storyTags: undefined,
+        })),
         pagination: {
           page: pageNum,
           limit: limitNum,
