@@ -486,4 +486,127 @@ router.put("/chapters/approve-bulk", authRequired, modRequired, async (req: Auth
   }
 });
 
+// ══════════════════════════════════════════════════
+//  COVER IMAGE MODERATION
+// ══════════════════════════════════════════════════
+
+// ─── GET /api/mod/covers/stats — thống kê ảnh bìa ──
+router.get("/covers/stats", authRequired, modRequired, async (_req: AuthRequest, res: Response) => {
+  try {
+    const [pending, approved, rejected] = await Promise.all([
+      prisma.story.count({ where: { coverApprovalStatus: "pending", coverImage: { not: null } } }),
+      prisma.story.count({ where: { coverApprovalStatus: "approved" } }),
+      prisma.story.count({ where: { coverApprovalStatus: "rejected" } }),
+    ]);
+    res.json({ pending, approved, rejected });
+  } catch (error) {
+    console.error("Error fetching cover stats:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ─── GET /api/mod/covers — danh sách ảnh bìa cần duyệt ──
+router.get("/covers", authRequired, modRequired, async (req: AuthRequest, res: Response) => {
+  try {
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = Math.min(50, parseInt(req.query.limit as string) || 20);
+    const status = (req.query.status as string) || "pending";
+
+    const where: any = { coverImage: { not: null } };
+    if (status !== "all") where.coverApprovalStatus = status;
+
+    const [stories, total] = await Promise.all([
+      prisma.story.findMany({
+        where,
+        orderBy: { updatedAt: "desc" },
+        skip: (page - 1) * limit,
+        take: limit,
+        select: {
+          id: true,
+          title: true,
+          slug: true,
+          coverImage: true,
+          coverApprovalStatus: true,
+          coverRejectionReason: true,
+          isAdult: true,
+          createdAt: true,
+          updatedAt: true,
+          author: { select: { id: true, name: true, email: true, image: true } },
+        },
+      }),
+      prisma.story.count({ where }),
+    ]);
+
+    res.json({ stories, total, page, totalPages: Math.ceil(total / limit) });
+  } catch (error) {
+    console.error("Error fetching covers:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ─── PUT /api/mod/covers/:id/approve — duyệt ảnh bìa ──
+router.put("/covers/:id/approve", authRequired, modRequired, async (req: AuthRequest, res: Response) => {
+  try {
+    const story = await prisma.story.findUnique({ where: { id: req.params.id } });
+    if (!story) return res.status(404).json({ error: "Story not found" });
+
+    await prisma.story.update({
+      where: { id: req.params.id },
+      data: { coverApprovalStatus: "approved", coverRejectionReason: null },
+    });
+
+    // Notify author
+    await prisma.notification.create({
+      data: {
+        userId: story.authorId,
+        type: "system",
+        title: "Ảnh bìa đã được duyệt ✅",
+        message: `Ảnh bìa truyện "${story.title}" đã được phê duyệt.`,
+        link: `/story/${story.slug}`,
+      },
+    }).catch(() => {});
+
+    res.json({ message: "Đã duyệt ảnh bìa" });
+    invalidateCache(`story:${story.slug}`);
+  } catch (error) {
+    console.error("Error approving cover:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ─── PUT /api/mod/covers/:id/reject — từ chối ảnh bìa ──
+router.put("/covers/:id/reject", authRequired, modRequired, async (req: AuthRequest, res: Response) => {
+  try {
+    const { reason } = req.body;
+    if (!reason || !reason.trim()) {
+      return res.status(400).json({ error: "Vui lòng nhập lý do từ chối" });
+    }
+
+    const story = await prisma.story.findUnique({ where: { id: req.params.id } });
+    if (!story) return res.status(404).json({ error: "Story not found" });
+
+    await prisma.story.update({
+      where: { id: req.params.id },
+      data: { coverApprovalStatus: "rejected", coverRejectionReason: reason.trim() },
+    });
+
+    // Notify author
+    await prisma.notification.create({
+      data: {
+        userId: story.authorId,
+        type: "system",
+        title: "Ảnh bìa bị từ chối ❌",
+        message: `Ảnh bìa truyện "${story.title}" bị từ chối. Lý do: ${reason.trim()}`,
+        link: `/write/${story.id}`,
+      },
+    }).catch(() => {});
+
+    res.json({ message: "Đã từ chối ảnh bìa" });
+    invalidateCache(`story:${story.slug}`);
+  } catch (error) {
+    console.error("Error rejecting cover:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 export default router;

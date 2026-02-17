@@ -41,6 +41,8 @@ model User {
   commentLikes  CommentLike[]
   earnings      AuthorEarning[]
   announcements Announcement[] @relation("AnnouncementCreator")
+  sentMessages     Message[]      @relation("MessageSender")
+  conversations    ConversationParticipant[]
 
   // ── Referral (Mã mời tác giả) ──
   referralCode  String?   @unique // mã mời duy nhất, chỉ tác giả mới có
@@ -176,6 +178,8 @@ model Story {
   rejectionReason String?   // lý do từ chối (nếu rejected)
   reviewedBy      String?   // ID moderator đã duyệt
   reviewedAt      DateTime? // thời gian duyệt
+  coverApprovalStatus String @default("pending") // pending | approved | rejected
+  coverRejectionReason String? // lý do từ chối ảnh bìa
   tags            String?   // legacy: comma-separated (migrated to StoryTag)
   views           Int       @default(0)
   likes           Int       @default(0)
@@ -452,4 +456,55 @@ model Announcement {
 
   createdBy   String
   createdByUser User @relation("AnnouncementCreator", fields: [createdBy], references: [id])
+}
+
+// ─── Conversations (Hội thoại Admin/Mod ↔ Tác giả) ──
+model Conversation {
+  id        String   @id @default(cuid())
+  subject   String?  // tiêu đề (VD: "Về truyện XYZ")
+  storyId   String?  // liên kết đến truyện (nếu có)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  participants ConversationParticipant[]
+  messages     Message[]
+
+  @@index([updatedAt])
+  @@index([storyId])
+}
+
+model ConversationParticipant {
+  id             String   @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lastReadAt     DateTime @default(now())
+
+  @@unique([conversationId, userId])
+  @@index([userId])
+}
+
+model Message {
+  id             String   @id @default(cuid())
+  content        String   @db.Text
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderId       String
+  sender         User     @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  createdAt      DateTime @default(now())
+
+  @@index([conversationId, createdAt])
+  @@index([senderId])
+}
+
+// ─── View Log (Batch view tracking) ──────────────
+model ViewLog {
+  id        String   @id @default(cuid())
+  storyId   String
+  ip        String
+  createdAt DateTime @default(now())
+
+  @@index([storyId])
+  @@index([createdAt])
 }
