@@ -1,6 +1,7 @@
 import { Router, Response } from "express";
 import prisma from "../lib/prisma";
 import { AuthRequest, authRequired } from "../middleware/auth";
+import { compressBase64Image } from "../lib/compressImage";
 
 const router = Router();
 
@@ -129,14 +130,24 @@ router.put("/", authRequired, async (req: AuthRequest, res: Response) => {
     }
     if (image !== undefined) {
       if (typeof image === "string" && image.length > 0) {
-        // Only allow https URLs or data URIs (max 500KB)
+        // Only allow https URLs or data URIs
         if (!image.startsWith("https://") && !image.startsWith("data:image/")) {
           return res.status(400).json({ error: "URL ảnh không hợp lệ" });
         }
-        if (image.length > 500000) {
-          return res.status(400).json({ error: "URL ảnh quá dài" });
+        // Reject raw input over 5MB (before compression)
+        if (image.length > 5 * 1024 * 1024) {
+          return res.status(400).json({ error: "Ảnh quá lớn, tối đa 5MB" });
         }
-        data.image = image;
+        // Compress data URIs to a small webp avatar (max 800px)
+        if (image.startsWith("data:image/")) {
+          try {
+            data.image = await compressBase64Image(image);
+          } catch {
+            return res.status(400).json({ error: "Không thể xử lý ảnh, vui lòng thử ảnh khác" });
+          }
+        } else {
+          data.image = image;
+        }
       } else {
         data.image = null;
       }
