@@ -127,7 +127,7 @@ router.get("/users", authRequired, adminRequired, async (req: AuthRequest, res: 
         where,
         select: {
           id: true, name: true, email: true, image: true, role: true,
-          coinBalance: true, createdAt: true,
+          isSuperMod: true, coinBalance: true, createdAt: true,
           _count: { select: { stories: true, comments: true } },
         },
         orderBy: { createdAt: "desc" },
@@ -147,18 +147,30 @@ router.get("/users", authRequired, adminRequired, async (req: AuthRequest, res: 
 // ─── PUT /api/admin/users/:id — cập nhật role user ──
 router.put("/users/:id", authRequired, adminRequired, async (req: AuthRequest, res: Response) => {
   try {
-    const { role } = req.body;
-    if (!["reader", "author", "moderator", "admin"].includes(role)) {
-      return res.status(400).json({ error: "Invalid role" });
+    const { role, isSuperMod } = req.body;
+    const data: any = {};
+
+    if (role !== undefined) {
+      if (!["reader", "author", "moderator", "admin"].includes(role)) {
+        return res.status(400).json({ error: "Invalid role" });
+      }
+      const admin = (req as any).adminUser;
+      if (req.params.id === admin.id && role !== "admin") {
+        return res.status(400).json({ error: "Không thể thay đổi role của chính mình" });
+      }
+      data.role = role;
+      // Clear supermod flag when role changes away from moderator
+      if (role !== "moderator") data.isSuperMod = false;
     }
-    const admin = (req as any).adminUser;
-    if (req.params.id === admin.id && role !== "admin") {
-      return res.status(400).json({ error: "Không thể thay đổi role của chính mình" });
+
+    if (isSuperMod !== undefined) {
+      data.isSuperMod = isSuperMod === true;
     }
+
     const user = await prisma.user.update({
       where: { id: req.params.id },
-      data: { role },
-      select: { id: true, name: true, email: true, image: true, role: true, coinBalance: true, createdAt: true },
+      data,
+      select: { id: true, name: true, email: true, image: true, role: true, isSuperMod: true, coinBalance: true, createdAt: true },
     });
     res.json(user);
   } catch (error) {

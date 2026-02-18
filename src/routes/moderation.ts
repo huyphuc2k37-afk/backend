@@ -2,6 +2,8 @@ import { Router, Response, NextFunction } from "express";
 import prisma from "../lib/prisma";
 import { AuthRequest, authRequired } from "../middleware/auth";
 import { invalidateCache } from "../lib/cache";
+import { compressBase64Image } from "../lib/compressImage";
+import { uploadCoverImage, isStorageEnabled } from "../lib/supabaseStorage";
 
 const router = Router();
 
@@ -605,6 +607,93 @@ router.put("/covers/:id/reject", authRequired, modRequired, async (req: AuthRequ
     invalidateCache(`story:${story.slug}`);
   } catch (error) {
     console.error("Error rejecting cover:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ────────────────────────────────────────────────
+   PUT /api/mod/stories/:id/edit
+   Admin/Mod edit story content (title, description, genre, cover, isAdult, status)
+   ──────────────────────────────────────────────── */
+router.put("/stories/:id/edit", authRequired, modRequired, async (req: AuthRequest, res: Response) => {
+  try {
+    const modUser = (req as any).modUser;
+    // Only admin or supermoderator can edit stories
+    if (modUser.role !== "admin" && !modUser.isSuperMod) {
+      return res.status(403).json({ error: "Chỉ Admin hoặc Super Moderator mới có quyền sửa truyện" });
+    }
+
+    const story = await prisma.story.findUnique({
+      where: { id: req.params.id },
+      select: { id: true, slug: true, authorId: true, title: true },
+    });
+    if (!story) return res.status(404).json({ error: "Story not found" });
+
+    const { title, description, coverImage, genre, tags, categoryId, status, isAdult } = req.body;
+
+    const data: any = {};
+    if (title !== undefined) data.title = title;
+    if (description !== undefined) data.description = description;
+    if (genre !== undefined) data.genre = genre;
+    if (tags !== undefined) {
+      if (tags === null) {
+        data.tags = null;
+      } else if (typeof tags === "string") {
+        const cleaned = tags.split(",").map((t: string) => t.trim()).filter(Boolean);
+        data.tags = cleaned.length > 0 ? cleaned.join(",") : null;
+      }
+    }
+    if (categoryId !== undefined) data.categoryId = categoryId || null;
+    if (status !== undefined) {
+      if (["ongoing", "completed", "paused"].includes(status)) {
+        data.status = status;
+      }
+    }
+    if (isAdult !== undefined) data.isAdult = isAdult === true;
+
+    // Handle cover image update
+    if (coverImage !== undefined) {
+      if (coverImage) {
+        const compressed = await compressBase64Image(coverImage);
+        if (isStorageEnabled()) {
+          const cloudUrl = await uploadCoverImage(compressed, req.params.id);
+          data.coverImage = cloudUrl || compressed;
+        } else {
+          data.coverImage = compressed;
+        }
+        data.coverApprovalStatus = "approved"; // mod/admin uploaded = auto-approved
+      } else {
+        data.coverImage = null;
+      }
+    }
+
+    const updated = await prisma.story.update({
+      where: { id: req.params.id },
+      data,
+      select: {
+        id: true, title: true, slug: true, description: true, coverImage: true,
+        genre: true, tags: true, categoryId: true, status: true, isAdult: true,
+        approvalStatus: true, updatedAt: true,
+      },
+    });
+
+    // Invalidate caches
+    invalidateCache(`story:${story.slug}`, "stories:*", "ranking:*");
+
+    // Notify author about the edit
+    prisma.notification.create({
+      data: {
+        userId: story.authorId,
+        type: "system",
+        title: "Truyện đã được chỉnh sửa",
+        message: `Kiểm duyệt viên ${modUser.name} đã chỉnh sửa truyện "${story.title}" của bạn.`,
+        link: `/write/${story.id}`,
+      },
+    }).catch(() => {});
+
+    res.json({ message: "Đã cập nhật truyện", story: updated });
+  } catch (error) {
+    console.error("Error editing story:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });

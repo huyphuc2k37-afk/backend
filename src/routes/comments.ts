@@ -167,13 +167,16 @@ router.post("/", authRequired, async (req: AuthRequest, res: Response) => {
       if (parentComment && parentComment.userId !== user.id) {
         // Get story slug for notification link
         const storyForLink = await prisma.story.findUnique({ where: { id: finalStoryId }, select: { slug: true } });
+        const notifLink = finalChapterId
+          ? `/story/${storyForLink?.slug || finalStoryId}/chapter/${finalChapterId}`
+          : `/story/${storyForLink?.slug || finalStoryId}`;
         prisma.notification.create({
           data: {
             userId: parentComment.userId,
             title: "Trả lời bình luận",
             message: `${user.name} đã trả lời bình luận của bạn.`,
             type: "system",
-            link: `/story/${storyForLink?.slug || finalStoryId}`,
+            link: notifLink,
           },
         }).catch(() => {});
       }
@@ -183,13 +186,16 @@ router.post("/", authRequired, async (req: AuthRequest, res: Response) => {
         select: { authorId: true, title: true, slug: true },
       }).then((story) => {
         if (story && story.authorId !== user.id) {
+          const notifLink = finalChapterId
+            ? `/story/${story.slug}/chapter/${finalChapterId}`
+            : `/story/${story.slug}`;
           prisma.notification.create({
             data: {
               userId: story.authorId,
               title: "Bình luận mới",
               message: `${user.name} đã bình luận về truyện "${story.title}".`,
               type: "system",
-              link: `/story/${story.slug}`,
+              link: notifLink,
             },
           }).catch(() => {});
         }

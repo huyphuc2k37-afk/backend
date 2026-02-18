@@ -19,6 +19,7 @@ model User {
   password      String?   // hashed, null for Google OAuth users
   image         String?
   role          String    @default("reader") // reader | author | moderator | admin
+  isSuperMod    Boolean   @default(false) // only admin-designated mods can edit stories
   provider      String    @default("google") // google | email
   emailVerified Boolean   @default(false)
   bio           String?   @db.Text
