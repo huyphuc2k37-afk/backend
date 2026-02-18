@@ -74,6 +74,7 @@ router.get("/stories", authRequired, modRequired, async (req: AuthRequest, res: 
           tags: true,
           status: true,
           isAdult: true,
+          views: true,
           approvalStatus: true,
           rejectionReason: true,
           reviewedBy: true,
