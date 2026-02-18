@@ -76,3 +76,35 @@ CREATE POLICY "Allow all for postgres" ON public."AuthorEarning" FOR ALL TO post
 -- ReferralEarning
 ALTER TABLE IF EXISTS public."ReferralEarning" ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Allow all for postgres" ON public."ReferralEarning" FOR ALL TO postgres USING (true) WITH CHECK (true);
+
+-- Category
+ALTER TABLE IF EXISTS public."Category" ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all for postgres" ON public."Category" FOR ALL TO postgres USING (true) WITH CHECK (true);
+
+-- Tag
+ALTER TABLE IF EXISTS public."Tag" ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all for postgres" ON public."Tag" FOR ALL TO postgres USING (true) WITH CHECK (true);
+
+-- StoryTag
+ALTER TABLE IF EXISTS public."StoryTag" ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all for postgres" ON public."StoryTag" FOR ALL TO postgres USING (true) WITH CHECK (true);
+
+-- Conversation
+ALTER TABLE IF EXISTS public."Conversation" ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all for postgres" ON public."Conversation" FOR ALL TO postgres USING (true) WITH CHECK (true);
+
+-- ConversationParticipant
+ALTER TABLE IF EXISTS public."ConversationParticipant" ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all for postgres" ON public."ConversationParticipant" FOR ALL TO postgres USING (true) WITH CHECK (true);
+
+-- Message
+ALTER TABLE IF EXISTS public."Message" ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all for postgres" ON public."Message" FOR ALL TO postgres USING (true) WITH CHECK (true);
+
+-- Redirect
+ALTER TABLE IF EXISTS public."Redirect" ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all for postgres" ON public."Redirect" FOR ALL TO postgres USING (true) WITH CHECK (true);
+
+-- ViewLog
+ALTER TABLE IF EXISTS public."ViewLog" ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all for postgres" ON public."ViewLog" FOR ALL TO postgres USING (true) WITH CHECK (true);
