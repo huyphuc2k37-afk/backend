@@ -16,14 +16,27 @@ router.get("/", async (req: Request, res: Response) => {
     } = req.query;
 
     const where: any = { approvalStatus: "approved" };
-    if (genre) where.genre = genre as string;
+    if (genre) {
+      // Match stories where the legacy genre field matches OR there's a
+      // matching tag (type=genre) with that name — so filtering by "Đam mỹ"
+      // finds stories with genre="Đam mỹ" AND stories tagged "Đam mỹ".
+      where.OR = [
+        { genre: genre as string },
+        { storyTags: { some: { tag: { name: { equals: genre as string, mode: "insensitive" }, type: "genre" } } } },
+      ];
+    }
     if (category) {
       where.category = { slug: category as string };
     }
     if (tagSlugs) {
       const slugs = (tagSlugs as string).split(",").map((t) => t.trim()).filter(Boolean).slice(0, 10);
       if (slugs.length > 0) {
-        where.storyTags = { some: { tag: { slug: { in: slugs } } } };
+        // When genre filter already added an OR with storyTags, we need AND for tag filter
+        if (where.storyTags) {
+          where.AND = [...(where.AND || []), { storyTags: { some: { tag: { slug: { in: slugs } } } } }];
+        } else {
+          where.storyTags = { some: { tag: { slug: { in: slugs } } } };
+        }
       }
     }
     if (status) where.status = status as string;
@@ -32,11 +45,17 @@ router.get("/", async (req: Request, res: Response) => {
     if (is_adult === "true") where.isAdult = true;
     if (is_adult === "false") where.isAdult = false;
     if (search) {
-      where.OR = [
+      const searchOR = [
         { title: { contains: search as string, mode: "insensitive" } },
         { description: { contains: search as string, mode: "insensitive" } },
         { author: { name: { contains: search as string, mode: "insensitive" } } },
       ];
+      // If genre already used where.OR, wrap search in AND to avoid overwriting
+      if (where.OR) {
+        where.AND = [...(where.AND || []), { OR: searchOR }];
+      } else {
+        where.OR = searchOR;
+      }
     }
 
     const orderBy: any = {};
