@@ -17,12 +17,10 @@ router.get("/", async (req: Request, res: Response) => {
 
     const where: any = { approvalStatus: "approved" };
     if (genre) {
-      // Match stories where the genre field contains the name (exact or comma-separated)
-      // OR there's a matching tag (type=genre) with that name.
-      // genre field may hold "Ngôn tình" or "Ngôn tình, Học đường"
+      // Match stories where the genre field contains the name (exact or as part of comma-separated list)
+      // OR there's a matching StoryTag (type=genre) with that name.
       const genreName = genre as string;
       where.OR = [
-        { genre: genreName },
         { genre: { contains: genreName, mode: "insensitive" } },
         { storyTags: { some: { tag: { name: { equals: genreName, mode: "insensitive" }, type: "genre" } } } },
       ];
