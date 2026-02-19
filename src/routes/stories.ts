@@ -17,12 +17,14 @@ router.get("/", async (req: Request, res: Response) => {
 
     const where: any = { approvalStatus: "approved" };
     if (genre) {
-      // Match stories where the legacy genre field matches OR there's a
-      // matching tag (type=genre) with that name — so filtering by "Đam mỹ"
-      // finds stories with genre="Đam mỹ" AND stories tagged "Đam mỹ".
+      // Match stories where the genre field contains the name (exact or comma-separated)
+      // OR there's a matching tag (type=genre) with that name.
+      // genre field may hold "Ngôn tình" or "Ngôn tình, Học đường"
+      const genreName = genre as string;
       where.OR = [
-        { genre: genre as string },
-        { storyTags: { some: { tag: { name: { equals: genre as string, mode: "insensitive" }, type: "genre" } } } },
+        { genre: genreName },
+        { genre: { contains: genreName, mode: "insensitive" } },
+        { storyTags: { some: { tag: { name: { equals: genreName, mode: "insensitive" }, type: "genre" } } } },
       ];
     }
     if (category) {
