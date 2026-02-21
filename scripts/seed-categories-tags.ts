@@ -198,12 +198,10 @@ const TAGS: TagDef[] = [
   { name: "1x1", slug: "1x1", type: "relation" },
   { name: "NP / Harem", slug: "np-harem", type: "relation" },
   { name: "Không CP", slug: "khong-cp", type: "relation" },
-  { name: "Trưởng thành", slug: "truong-thanh", type: "mature" },
-  { name: "Tình cảm sâu sắc", slug: "tinh-cam-sau-sac", type: "mature" },
-  { name: "Lãng mạn", slug: "lang-man", type: "mature" },
-  { name: "Tình cảm người lớn", slug: "tinh-cam-nguoi-lon", type: "mature" },
-  { name: "Drama tình cảm", slug: "drama-tinh-cam", type: "mature" },
-  { name: "Quan hệ phức tạp", slug: "quan-he-phuc-tap", type: "mature" },
+  { name: "Tình cảm sâu sắc", slug: "tinh-cam-sau-sac", type: "relation" },
+  { name: "Lãng mạn", slug: "lang-man", type: "relation" },
+  { name: "Drama tình cảm", slug: "drama-tinh-cam", type: "relation" },
+  { name: "Quan hệ phức tạp", slug: "quan-he-phuc-tap", type: "relation" },
 
   // ── ending: Kết thúc truyện ──
   { name: "HE (Happy Ending)", slug: "he-happy-ending", type: "ending" },
@@ -242,7 +240,6 @@ const GENRE_TO_CATEGORY: Record<string, string> = {
   "Thuần ngọt": "tinh-cam",
   "Lãng mạn": "tinh-cam",
   "Tình cảm sâu sắc": "tinh-cam",
-  "Tình cảm người lớn": "tinh-cam",
   "Drama tình cảm": "tinh-cam",
   "Quan hệ phức tạp": "tinh-cam",
   "1x1": "tinh-cam",
@@ -316,10 +313,9 @@ const GENRE_TO_CATEGORY: Record<string, string> = {
   "Tự truyện": "fanfic-light-novel",
   "Tản văn": "fanfic-light-novel",
 
-  // Ending, perspective, mature — fallback to tinh-cam
+  // Ending, perspective — fallback to tinh-cam
   "Góc nhìn nữ chính": "tinh-cam",
   "Góc nhìn nam chính": "tinh-cam",
-  "Trưởng thành": "tinh-cam",
   "HE (Happy Ending)": "tinh-cam",
   "SE (Sad Ending)": "tinh-cam",
   "OE (Open Ending)": "tinh-cam",

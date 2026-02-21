@@ -136,7 +136,7 @@ model Tag {
   id              String    @id @default(cuid())
   name            String    // Tên hiển thị: "Ngôn tình", "1x1"
   slug            String    @unique // URL slug: "ngon-tinh"
-  type            String    @default("genre") // genre | setting | tone | relation | ending | perspective | content | form | mature
+  type            String    @default("genre") // genre | setting | tone | relation | ending | perspective | content | form
   createdAt       DateTime  @default(now())
 
   storyTags       StoryTag[]
