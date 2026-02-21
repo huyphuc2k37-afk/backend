@@ -108,3 +108,7 @@ CREATE POLICY "Allow all for postgres" ON public."Redirect" FOR ALL TO postgres 
 -- ViewLog
 ALTER TABLE IF EXISTS public."ViewLog" ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Allow all for postgres" ON public."ViewLog" FOR ALL TO postgres USING (true) WITH CHECK (true);
+
+-- DailyQuest
+ALTER TABLE IF EXISTS public."DailyQuest" ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all for postgres" ON public."DailyQuest" FOR ALL TO postgres USING (true) WITH CHECK (true);
