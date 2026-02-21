@@ -46,6 +46,7 @@ import announcementsRouter from "./routes/announcements";
 import categoriesRouter from "./routes/categories";
 import tagsRouter from "./routes/tags";
 import messagesRouter from "./routes/messages";
+import questsRouter from "./routes/quests";
 import { startTelegramPolling } from "./lib/telegram";
 
 const app = express();
@@ -186,6 +187,7 @@ app.use("/api/announcements", announcementsRouter);
 app.use("/api/categories", categoriesRouter);
 app.use("/api/tags", tagsRouter);
 app.use("/api/messages", messagesRouter);
+app.use("/api/quests", questsRouter);
 
 // ─── 404 handler ─────────────────────────────────
 app.use((_req, res) => {

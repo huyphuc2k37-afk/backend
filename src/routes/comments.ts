@@ -4,6 +4,33 @@ import { AuthRequest, authRequired } from "../middleware/auth";
 
 const router = Router();
 
+// ── Quest helper: auto-complete comment quest ──
+async function completeCommentQuest(userId: string) {
+  const now = new Date();
+  const vn = new Date(now.getTime() + 7 * 60 * 60 * 1000);
+  const date = vn.toISOString().slice(0, 10);
+
+  const quest = await prisma.dailyQuest.upsert({
+    where: { userId_date: { userId, date } },
+    create: { id: require("crypto").randomUUID(), userId, date, commented: true, coinsEarned: 10 },
+    update: {},
+  });
+
+  if (quest.commented) return; // already completed today
+  if (quest.coinsEarned + 10 > 50) return; // daily limit
+
+  await prisma.$transaction([
+    prisma.dailyQuest.update({
+      where: { userId_date: { userId, date } },
+      data: { commented: true, coinsEarned: { increment: 10 } },
+    }),
+    prisma.user.update({
+      where: { id: userId },
+      data: { coinBalance: { increment: 10 } },
+    }),
+  ]);
+}
+
 const userSelect = {
   id: true,
   name: true,
@@ -157,6 +184,12 @@ router.post("/", authRequired, async (req: AuthRequest, res: Response) => {
         },
       },
     });
+
+    // ── Auto-complete comment quest (fire & forget) ──
+    if (finalChapterId) {
+      // Only count chapter comments for the quest
+      completeCommentQuest(user.id).catch(() => {});
+    }
 
     // Notify
     if (parentId) {

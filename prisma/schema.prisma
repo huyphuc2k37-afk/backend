@@ -51,6 +51,7 @@ model User {
   referredBy    User?     @relation("Referrals", fields: [referredById], references: [id], onDelete: SetNull)
   referrals     User[]    @relation("Referrals") // những user mà mình giới thiệu
   referralEarnings ReferralEarning[]
+  dailyQuests   DailyQuest[]
 
   @@index([role])
   @@index([referredById])
@@ -508,4 +509,24 @@ model ViewLog {
 
   @@index([storyId])
   @@index([createdAt])
+}
+
+// ─── Daily Quests (Nhiệm vụ hàng ngày) ──────────
+model DailyQuest {
+  id              String   @id @default(cuid())
+  userId          String
+  date            String   // YYYY-MM-DD format for easy grouping
+  checkin         Boolean  @default(false) // Nhiệm vụ 1: Điểm danh
+  commented       Boolean  @default(false) // Nhiệm vụ 2: Bình luận 1 chương
+  readMinutes     Int      @default(0)     // Phút đọc tích lũy trong ngày
+  readCompleted   Boolean  @default(false) // Nhiệm vụ 3: Đọc >= 10 phút
+  coinsEarned     Int      @default(0)     // Tổng xu đã nhận từ nhiệm vụ ngày đó
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+  @@index([userId])
+  @@index([date])
 }
