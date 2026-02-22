@@ -131,8 +131,13 @@ router.get("/:id/cover", async (req: Request, res: Response) => {
     });
     if (!story?.coverImage) return res.status(404).end();
 
-    // Serve cover if either the story or the cover itself is approved
-    const coverOk = story.approvalStatus === "approved" || story.coverApprovalStatus === "approved";
+    // Serve cover logic:
+    // - Approved story: always serve cover UNLESS cover was explicitly rejected
+    // - Pending/other story: serve only if cover itself was approved
+    const coverRejected = story.coverApprovalStatus === "rejected";
+    const coverOk = story.approvalStatus === "approved"
+      ? !coverRejected
+      : story.coverApprovalStatus === "approved";
     if (!coverOk) return res.status(403).end();
 
     // If coverImage is a URL (cloud storage), redirect (302 so browser doesn't cache permanently)

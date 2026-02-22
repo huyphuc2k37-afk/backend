@@ -262,15 +262,22 @@ router.put("/stories/:id", authRequired, async (req: AuthRequest, res: Response)
     if (postSchedule !== undefined) data.postSchedule = postSchedule;
     if (isAdult !== undefined) data.isAdult = isAdult === true;
 
-    // Reset cover approval when author uploads a new cover image
-    if (data.coverImage) {
+    // Reset cover approval when author uploads a NEW cover image (not the same URL)
+    // Cover has its own approval flow — do NOT reset story approvalStatus here
+    const coverActuallyChanged = data.coverImage && data.coverImage !== story.coverImage;
+    if (coverActuallyChanged) {
       data.coverApprovalStatus = "pending";
       data.coverRejectionReason = null;
     }
 
-    // Reset to pending when author edits substantive content of approved/rejected story
+    // Reset to pending when author edits substantive TEXT content of approved/rejected story
+    // Note: cover changes are handled separately above via coverApprovalStatus
     if (story.approvalStatus === "rejected" || story.approvalStatus === "approved") {
-      const substantiveChange = data.title || data.description || data.coverImage || data.genre || data.isAdult !== undefined;
+      const substantiveChange =
+        (data.title && data.title !== story.title) ||
+        (data.description && data.description !== story.description) ||
+        (data.genre && data.genre !== story.genre) ||
+        (data.isAdult !== undefined && data.isAdult !== story.isAdult);
       if (substantiveChange) {
         data.approvalStatus = "pending";
         data.rejectionReason = null;
