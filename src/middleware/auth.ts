@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
+import { getJwtApiSecret } from "../lib/secrets";
 
 export interface AuthRequest extends Request {
   user?: {
@@ -23,7 +24,7 @@ export function authRequired(req: AuthRequest, res: Response, next: NextFunction
   const token = authHeader.split(" ")[1];
 
   try {
-    const secret = process.env.NEXTAUTH_SECRET;
+    const secret = getJwtApiSecret();
     if (!secret) return res.status(500).json({ error: "Server misconfigured" });
     const decoded = jwt.verify(token, secret) as any;
     if (!decoded.email || typeof decoded.email !== "string") {
@@ -52,7 +53,7 @@ export function authOptional(req: AuthRequest, res: Response, next: NextFunction
 
   const token = authHeader.split(" ")[1];
   try {
-    const secret = process.env.NEXTAUTH_SECRET;
+    const secret = getJwtApiSecret();
     if (!secret) return next();
     const decoded = jwt.verify(token, secret) as any;
     req.user = {

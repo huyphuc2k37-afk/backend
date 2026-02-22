@@ -27,6 +27,7 @@
     "dotenv": "^16.4.7",
     "express": "^4.21.1",
     "express-rate-limit": "^8.2.1",
+    "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.2",
     "next-auth": "^4.24.13",
     "node-cache": "^5.1.2",

@@ -4,6 +4,7 @@ import express from "express";
 import cors from "cors";
 import compression from "compression";
 import rateLimit from "express-rate-limit";
+import helmet from "helmet";
 
 // ─── Sentry Error Monitoring ─────────────────────
 if (process.env.SENTRY_DSN) {
@@ -51,6 +52,8 @@ import { startTelegramPolling } from "./lib/telegram";
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+
+app.disable("x-powered-by");
 
 // ─── Middleware ───────────────────────────────────
 const normalizeOrigin = (origin: string): string => {
@@ -120,6 +123,12 @@ app.use(
       return callback(new Error(`CORS blocked for origin: ${normalizedOrigin}`));
     },
     credentials: true,
+  })
+);
+app.use(
+  helmet({
+    contentSecurityPolicy: false,
+    crossOriginEmbedderPolicy: false,
   })
 );
 app.use(compression());

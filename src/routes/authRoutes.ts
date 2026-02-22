@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { createClient } from "@supabase/supabase-js";
 import prisma from "../lib/prisma";
+import { getAuthSyncSecret, getJwtApiSecret } from "../lib/secrets";
 
 const router = Router();
 
@@ -170,7 +171,7 @@ router.post("/login", async (req: Request, res: Response) => {
     }
 
     // Create JWT token (same format as NextAuth accessToken)
-    const secret = process.env.NEXTAUTH_SECRET;
+    const secret = getJwtApiSecret();
     if (!secret) return res.status(500).json({ error: "Server misconfigured" });
     const accessToken = jwt.sign(
       {
@@ -232,7 +233,8 @@ router.post("/sync", async (req: Request, res: Response) => {
   try {
     // Verify shared secret — only NextAuth server-side can call this
     const syncSecret = req.headers["x-sync-secret"];
-    if (!syncSecret || syncSecret !== process.env.NEXTAUTH_SECRET) {
+    const expectedSyncSecret = getAuthSyncSecret();
+    if (!syncSecret || !expectedSyncSecret || syncSecret !== expectedSyncSecret) {
       return res.status(403).json({ error: "Forbidden" });
     }
 
