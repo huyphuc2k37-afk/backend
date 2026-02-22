@@ -142,6 +142,7 @@ router.get("/:id/cover", async (req: Request, res: Response) => {
 
     // If coverImage is a URL (cloud storage), redirect (302 so browser doesn't cache permanently)
     if (story.coverImage.startsWith("http://") || story.coverImage.startsWith("https://")) {
+      res.set("Cache-Control", "no-store, no-cache, must-revalidate");
       return res.redirect(302, story.coverImage);
     }
 
