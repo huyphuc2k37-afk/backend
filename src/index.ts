@@ -129,6 +129,7 @@ app.use(
   helmet({
     contentSecurityPolicy: false,
     crossOriginEmbedderPolicy: false,
+    crossOriginResourcePolicy: { policy: "cross-origin" }, // allow images to be loaded from frontend (different origin)
   })
 );
 app.use(compression());
