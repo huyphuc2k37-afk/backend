@@ -127,16 +127,17 @@ router.get("/:id/cover", async (req: Request, res: Response) => {
   try {
     const story = await prisma.story.findUnique({
       where: { id: req.params.id },
-      select: { coverImage: true, approvalStatus: true },
+      select: { coverImage: true, approvalStatus: true, coverApprovalStatus: true },
     });
     if (!story?.coverImage) return res.status(404).end();
 
-    // Only serve covers for approved stories
-    if (story.approvalStatus !== "approved") return res.status(403).end();
+    // Serve cover if either the story or the cover itself is approved
+    const coverOk = story.approvalStatus === "approved" || story.coverApprovalStatus === "approved";
+    if (!coverOk) return res.status(403).end();
 
-    // If coverImage is a URL (cloud storage), redirect to it
+    // If coverImage is a URL (cloud storage), redirect (302 so browser doesn't cache permanently)
     if (story.coverImage.startsWith("http://") || story.coverImage.startsWith("https://")) {
-      return res.redirect(301, story.coverImage);
+      return res.redirect(302, story.coverImage);
     }
 
     // Legacy: base64 data URI — serve as binary

@@ -262,6 +262,12 @@ router.put("/stories/:id", authRequired, async (req: AuthRequest, res: Response)
     if (postSchedule !== undefined) data.postSchedule = postSchedule;
     if (isAdult !== undefined) data.isAdult = isAdult === true;
 
+    // Reset cover approval when author uploads a new cover image
+    if (data.coverImage) {
+      data.coverApprovalStatus = "pending";
+      data.coverRejectionReason = null;
+    }
+
     // Reset to pending when author edits substantive content of approved/rejected story
     if (story.approvalStatus === "rejected" || story.approvalStatus === "approved") {
       const substantiveChange = data.title || data.description || data.coverImage || data.genre || data.isAdult !== undefined;
