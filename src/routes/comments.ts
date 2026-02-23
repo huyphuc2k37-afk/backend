@@ -38,10 +38,41 @@ const userSelect = {
   role: true,
 };
 
-// GET /api/comments?storyId=xxx&chapterId=xxx — get comments (with replies nested)
+// GET /api/comments/paragraph-counts?chapterId=xxx — get comment counts per paragraph
+router.get("/paragraph-counts", async (req: Request, res: Response) => {
+  try {
+    const { chapterId } = req.query;
+    if (!chapterId) {
+      return res.status(400).json({ error: "chapterId is required" });
+    }
+
+    const counts = await prisma.comment.groupBy({
+      by: ["paragraphIndex"],
+      where: {
+        chapterId: chapterId as string,
+        paragraphIndex: { not: null },
+      },
+      _count: { id: true },
+    });
+
+    const result: Record<number, number> = {};
+    for (const row of counts) {
+      if (row.paragraphIndex !== null) {
+        result[row.paragraphIndex] = row._count.id;
+      }
+    }
+
+    res.json({ counts: result });
+  } catch (error) {
+    console.error("Error fetching paragraph counts:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// GET /api/comments?storyId=xxx&chapterId=xxx&paragraphIndex=0 — get comments (with replies nested)
 router.get("/", async (req: Request, res: Response) => {
   try {
-    const { storyId, chapterId, page = "1" } = req.query;
+    const { storyId, chapterId, paragraphIndex, page = "1" } = req.query;
     if (!storyId && !chapterId) {
       return res.status(400).json({ error: "storyId or chapterId is required" });
     }
@@ -54,6 +85,14 @@ router.get("/", async (req: Request, res: Response) => {
     } else {
       where.storyId = storyId as string;
       where.chapterId = null;
+    }
+
+    // Filter by paragraph index if provided
+    if (paragraphIndex !== undefined && paragraphIndex !== null && paragraphIndex !== "") {
+      where.paragraphIndex = parseInt(paragraphIndex as string);
+    } else if (chapterId && paragraphIndex === undefined) {
+      // Default chapter comments exclude paragraph comments
+      where.paragraphIndex = null;
     }
 
     // Find story authorId for "author" badge
@@ -142,11 +181,14 @@ router.post("/", authRequired, async (req: AuthRequest, res: Response) => {
 
     let finalStoryId = storyId;
     let finalChapterId = chapterId || null;
+    const paragraphIdx = req.body.paragraphIndex !== undefined && req.body.paragraphIndex !== null
+      ? parseInt(req.body.paragraphIndex)
+      : null;
 
     if (parentId) {
       const parent = await prisma.comment.findUnique({
         where: { id: parentId },
-        select: { storyId: true, chapterId: true },
+        select: { storyId: true, chapterId: true, paragraphIndex: true },
       });
       if (!parent) return res.status(404).json({ error: "Parent comment not found" });
       finalStoryId = parent.storyId;
@@ -172,6 +214,7 @@ router.post("/", authRequired, async (req: AuthRequest, res: Response) => {
         storyId: finalStoryId,
         chapterId: finalChapterId,
         parentId: parentId || null,
+        paragraphIndex: parentId ? null : paragraphIdx, // only set on top-level paragraph comments
       },
       include: {
         user: { select: userSelect },

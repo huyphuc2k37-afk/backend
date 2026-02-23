@@ -297,6 +297,9 @@ model Comment {
   chapterId     String?
   chapter       Chapter?  @relation(fields: [chapterId], references: [id], onDelete: Cascade)
 
+  // Inline paragraph commenting (null = regular chapter/story comment)
+  paragraphIndex Int?     // 0-based index of the paragraph within the chapter
+
   // Reply threading
   parentId      String?
   parent        Comment?  @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
@@ -306,6 +309,7 @@ model Comment {
 
   @@index([storyId, createdAt])
   @@index([chapterId, createdAt])
+  @@index([chapterId, paragraphIndex])
   @@index([parentId])
 }
 
