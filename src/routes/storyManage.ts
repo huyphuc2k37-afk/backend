@@ -420,6 +420,98 @@ router.post("/stories/:storyId/chapters", authRequired, async (req: AuthRequest,
   }
 });
 
+// ─── POST /api/manage/stories/:storyId/chapters/bulk — đăng nhiều chương cùng lúc ──
+router.post("/stories/:storyId/chapters/bulk", authRequired, async (req: AuthRequest, res: Response) => {
+  try {
+    const user = await prisma.user.findUnique({ where: { email: req.user!.email } });
+    if (!user) return res.status(401).json({ error: "Unauthorized" });
+
+    const story = await prisma.story.findUnique({ where: { id: req.params.storyId } });
+    if (!story) return res.status(404).json({ error: "Story not found" });
+    if (story.authorId !== user.id) return res.status(403).json({ error: "Forbidden" });
+
+    const { chapters } = req.body as {
+      chapters: Array<{ title: string; content: string; isLocked?: boolean; price?: number }>;
+    };
+
+    if (!Array.isArray(chapters) || chapters.length === 0) {
+      return res.status(400).json({ error: "Danh sách chương không được trống" });
+    }
+    if (chapters.length > 100) {
+      return res.status(400).json({ error: "Tối đa 100 chương mỗi lần đăng" });
+    }
+
+    // Validate all chapters before creating any
+    for (let i = 0; i < chapters.length; i++) {
+      const ch = chapters[i];
+      if (!ch.title || !ch.title.trim()) {
+        return res.status(400).json({ error: `Chương ${i + 1}: Thiếu tiêu đề` });
+      }
+      if (!ch.content || !ch.content.trim()) {
+        return res.status(400).json({ error: `Chương ${i + 1}: Thiếu nội dung` });
+      }
+    }
+
+    // Get current last chapter number
+    const lastChapter = await prisma.chapter.findFirst({
+      where: { storyId: req.params.storyId },
+      orderBy: { number: "desc" },
+    });
+    let nextNumber = (lastChapter?.number || 0) + 1;
+
+    // Prepare chapter data
+    const chapterData = chapters.map((ch, i) => {
+      const num = nextNumber + i;
+      const wordCount = ch.content.replace(/<[^>]*>/g, "").split(/\s+/).filter(Boolean).length;
+
+      // First 10 chapters must be free
+      let finalIsLocked = ch.isLocked || false;
+      let finalPrice = ch.price || 0;
+      if (num <= 10) {
+        finalIsLocked = false;
+        finalPrice = 0;
+      } else if (finalIsLocked) {
+        finalPrice = Math.max(100, Math.min(5000, finalPrice));
+      }
+
+      return {
+        title: ch.title.trim(),
+        number: num,
+        content: ch.content.trim(),
+        wordCount,
+        isLocked: finalIsLocked,
+        price: finalIsLocked ? finalPrice : 0,
+        approvalStatus: "pending" as const,
+        storyId: req.params.storyId,
+      };
+    });
+
+    // Bulk create in transaction
+    const result = await prisma.$transaction(async (tx) => {
+      const created = await tx.chapter.createMany({ data: chapterData });
+      await tx.story.update({ where: { id: req.params.storyId }, data: { updatedAt: new Date() } });
+      return created;
+    });
+
+    res.status(201).json({
+      message: `Đã tạo ${result.count} chương thành công`,
+      count: result.count,
+      firstNumber: nextNumber,
+      lastNumber: nextNumber + chapters.length - 1,
+    });
+
+    // Notify moderators
+    notifyModerators({
+      title: "📝 Nhiều chương mới cần duyệt",
+      message: `${result.count} chương mới (${nextNumber}–${nextNumber + chapters.length - 1}) của truyện "${story.title}" cần được kiểm duyệt.`,
+      link: "/mod",
+    });
+  } catch (error) {
+    console.error("Error bulk creating chapters:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // ─── GET /api/manage/chapters/:id — lấy nội dung chương để edit ──
 router.get("/chapters/:id", authRequired, async (req: AuthRequest, res: Response) => {
   try {
