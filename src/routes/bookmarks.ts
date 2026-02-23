@@ -94,9 +94,17 @@ router.post("/", authRequired, async (req: AuthRequest, res: Response) => {
       return res.json({ bookmarked: false });
     }
 
-    await prisma.bookmark.create({
-      data: { userId: user.id, storyId },
-    });
+    try {
+      await prisma.bookmark.create({
+        data: { userId: user.id, storyId },
+      });
+    } catch (err: any) {
+      // Handle race condition: unique constraint violation means already bookmarked
+      if (err.code === "P2002") {
+        return res.json({ bookmarked: true });
+      }
+      throw err;
+    }
 
     res.json({ bookmarked: true });
   } catch (error) {

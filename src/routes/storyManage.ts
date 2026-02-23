@@ -377,12 +377,10 @@ router.post("/stories/:storyId/chapters", authRequired, async (req: AuthRequest,
     });
     const nextNumber = (lastChapter?.number || 0) + 1;
 
-    // Validate lock rules: first 10 chapters must be free, price 100-5000
-    // Count total chapters (not just number) to prevent bypass via deletion
-    const totalChapters = await prisma.chapter.count({ where: { storyId: req.params.storyId } });
+    // Validate lock rules: first 10 chapters must be free (by number), price 100-5000
     let finalIsLocked = isLocked || false;
     let finalPrice = price || 0;
-    if (totalChapters < 10) {
+    if (nextNumber <= 10) {
       finalIsLocked = false;
       finalPrice = 0;
     } else if (finalIsLocked) {

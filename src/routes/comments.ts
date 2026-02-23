@@ -12,7 +12,7 @@ async function completeCommentQuest(userId: string) {
 
   const quest = await prisma.dailyQuest.upsert({
     where: { userId_date: { userId, date } },
-    create: { id: require("crypto").randomUUID(), userId, date, commented: true, coinsEarned: 10 },
+    create: { id: require("crypto").randomUUID(), userId, date, commented: false, coinsEarned: 0 },
     update: {},
   });
 
