@@ -185,7 +185,7 @@ router.post("/conversations", authRequired, messagingAccess, async (req: AuthReq
           { participants: { some: { userId: user.id } } },
           { participants: { some: { userId: authorId } } },
         ],
-        ...(storyId ? { storyId } : {}),
+        ...(storyId ? { storyId } : { storyId: null }),
       },
     });
 
@@ -317,7 +317,6 @@ router.post("/conversations/:id/reply", authRequired, messagingAccess, async (re
     });
 
     const senderLabel = user.role === "admin" ? "Admin" : user.role === "moderator" ? "Kiểm duyệt viên" : user.name;
-    const notifLink = ["admin", "moderator"].includes(user.role) ? "/write/messages" : "/mod/messages";
 
     for (const p of otherParticipants) {
       const targetUser = await prisma.user.findUnique({ where: { id: p.userId }, select: { role: true } });

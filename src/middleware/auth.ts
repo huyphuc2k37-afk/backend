@@ -56,6 +56,7 @@ export function authOptional(req: AuthRequest, res: Response, next: NextFunction
     const secret = getJwtApiSecret();
     if (!secret) return next();
     const decoded = jwt.verify(token, secret) as any;
+    if (!decoded.email) return next(); // skip if no email in token
     req.user = {
       email: decoded.email,
       name: decoded.name,
