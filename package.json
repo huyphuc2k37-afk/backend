@@ -14,6 +14,7 @@
     "db:studio": "npx prisma studio",
     "db:backup": "node backup_db.js",
     "db:setup": "node setup_db.js",
+    "db:seed-tags": "node seed_tags.js",
     "db:clean": "node clean_db.js",
     "test": "jest --forceExit",
     "test:watch": "jest --watch --forceExit"
