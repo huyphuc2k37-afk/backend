@@ -18,19 +18,20 @@ function slugify(text) {
 }
 
 // ─── Categories (Danh mục lớn cho SEO + navigation) ──────────
+// Slugs are explicit (NOT auto-generated) to guarantee SEO consistency.
 const categories = [
-  { name: "Tình cảm", icon: "💕", color: "#ec4899", order: 1 },
-  { name: "Huyền huyễn & Giả tưởng", icon: "🔮", color: "#8b5cf6", order: 2 },
-  { name: "Xuyên không & Chuyển sinh", icon: "🌀", color: "#6366f1", order: 3 },
-  { name: "Học đường & Đời thường", icon: "🏫", color: "#3b82f6", order: 4 },
-  { name: "Kinh dị & Linh dị", icon: "👻", color: "#1e293b", order: 5 },
-  { name: "Đam mỹ", icon: "🌈", color: "#0ea5e9", order: 6 },
-  { name: "Bách hợp", icon: "🌸", color: "#f472b6", order: 7 },
-  { name: "Phiêu lưu & Hành động", icon: "⚔️", color: "#ef4444", order: 8 },
-  { name: "Ngôn tình", icon: "❤️", color: "#f43f5e", order: 9 },
-  { name: "Light Novel & Fanfic", icon: "📚", color: "#f59e0b", order: 10 },
-  { name: "Khoa học viễn tưởng", icon: "🚀", color: "#06b6d4", order: 11 },
-  { name: "Cổ đại & Kiếm hiệp", icon: "🏯", color: "#84cc16", order: 12 },
+  { name: "Tình cảm", slug: "tinh-cam", icon: "💕", color: "#ec4899", order: 1 },
+  { name: "Huyền huyễn & Giả tưởng", slug: "huyen-huyen", icon: "🔮", color: "#8b5cf6", order: 2 },
+  { name: "Xuyên không & Chuyển sinh", slug: "xuyen-khong", icon: "🌀", color: "#6366f1", order: 3 },
+  { name: "Học đường & Đời thường", slug: "hoc-duong", icon: "🏫", color: "#3b82f6", order: 4 },
+  { name: "Kinh dị & Linh dị", slug: "kinh-di", icon: "👻", color: "#1e293b", order: 5 },
+  { name: "Đam mỹ", slug: "dam-my", icon: "🌈", color: "#0ea5e9", order: 6 },
+  { name: "Bách hợp", slug: "bach-hop", icon: "🌸", color: "#f472b6", order: 7 },
+  { name: "Phiêu lưu & Hành động", slug: "phieu-luu", icon: "⚔️", color: "#ef4444", order: 8 },
+  { name: "Ngôn tình", slug: "ngon-tinh", icon: "❤️", color: "#f43f5e", order: 9 },
+  { name: "Light Novel & Fanfic", slug: "light-novel", icon: "📚", color: "#f59e0b", order: 10 },
+  { name: "Khoa học viễn tưởng", slug: "khoa-hoc", icon: "🚀", color: "#06b6d4", order: 11 },
+  { name: "Cổ đại & Kiếm hiệp", slug: "co-dai", icon: "🏯", color: "#84cc16", order: 12 },
 ];
 
 // ─── Tags (Thẻ tag chi tiết) ──────────────────────
@@ -148,8 +149,7 @@ async function seedCategories() {
   let created = 0, skipped = 0;
 
   for (const cat of categories) {
-    const slug = slugify(cat.name);
-    const exists = await prisma.category.findUnique({ where: { slug } });
+    const exists = await prisma.category.findUnique({ where: { slug: cat.slug } });
     if (exists) {
       skipped++;
       continue;
@@ -157,7 +157,7 @@ async function seedCategories() {
     await prisma.category.create({
       data: {
         name: cat.name,
-        slug,
+        slug: cat.slug,
         icon: cat.icon,
         color: cat.color,
         displayOrder: cat.order,
