@@ -141,7 +141,6 @@ const tags = [
   { name: "Oneshot", type: "form" },
   { name: "Truyện ngắn", type: "form" },
   { name: "Truyện sáng tác", type: "form" },
-  { name: "Truyện dịch", type: "form" },
 ];
 
 async function seedCategories() {

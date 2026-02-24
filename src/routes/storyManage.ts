@@ -7,8 +7,6 @@ import { invalidateCache } from "../lib/cache";
 
 const router = Router();
 
-const LEGACY_HIDDEN_TAGS = new Set(["truyện dịch", "truyen dich"]);
-
 function sanitizeStoryTags(tags: unknown): string | null | undefined {
   if (tags === undefined) return undefined;
   if (tags === null) return null;
@@ -17,8 +15,7 @@ function sanitizeStoryTags(tags: unknown): string | null | undefined {
   const cleaned = tags
     .split(",")
     .map((tag) => tag.trim())
-    .filter(Boolean)
-    .filter((tag) => !LEGACY_HIDDEN_TAGS.has(tag.toLowerCase()));
+    .filter(Boolean);
 
   return cleaned.length > 0 ? cleaned.join(",") : null;
 }
