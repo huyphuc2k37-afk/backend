@@ -699,6 +699,94 @@ router.put("/stories/:id/edit", authRequired, modRequired, async (req: AuthReque
   }
 });
 
+// ─── GET /api/mod/stories/:id/chapters-full — lấy toàn bộ chương kèm nội dung (Admin / Super Mod) ──
+router.get("/stories/:id/chapters-full", authRequired, modRequired, async (req: AuthRequest, res: Response) => {
+  try {
+    const modUser = (req as any).modUser;
+    if (modUser.role !== "admin" && !modUser.isSuperMod) {
+      return res.status(403).json({ error: "Chỉ Admin hoặc Super Moderator mới có quyền xem nội dung chương" });
+    }
+
+    const story = await prisma.story.findUnique({
+      where: { id: req.params.id },
+      select: { id: true, title: true },
+    });
+    if (!story) return res.status(404).json({ error: "Story not found" });
+
+    const chapters = await prisma.chapter.findMany({
+      where: { storyId: req.params.id },
+      select: {
+        id: true,
+        title: true,
+        number: true,
+        content: true,
+        wordCount: true,
+        authorNote: true,
+        isLocked: true,
+        price: true,
+        approvalStatus: true,
+        createdAt: true,
+      },
+      orderBy: { number: "asc" },
+    });
+
+    res.json(chapters);
+  } catch (error) {
+    console.error("Error fetching full chapters:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ─── PUT /api/mod/chapters/:id/edit — sửa nội dung chương (Admin / Super Mod) ──
+router.put("/chapters/:id/edit", authRequired, modRequired, async (req: AuthRequest, res: Response) => {
+  try {
+    const modUser = (req as any).modUser;
+    if (modUser.role !== "admin" && !modUser.isSuperMod) {
+      return res.status(403).json({ error: "Chỉ Admin hoặc Super Moderator mới có quyền sửa chương" });
+    }
+
+    const chapter = await prisma.chapter.findUnique({
+      where: { id: req.params.id },
+      include: { story: { select: { id: true, title: true, slug: true, authorId: true } } },
+    });
+    if (!chapter) return res.status(404).json({ error: "Chapter not found" });
+
+    const { title, content, authorNote } = req.body;
+    const data: any = {};
+    if (title !== undefined) data.title = title.trim();
+    if (content !== undefined) {
+      data.content = content;
+      data.wordCount = content.replace(/<[^>]*>/g, "").split(/\s+/).filter(Boolean).length;
+    }
+    if (authorNote !== undefined) data.authorNote = authorNote;
+
+    const updated = await prisma.chapter.update({
+      where: { id: req.params.id },
+      data,
+      select: { id: true, title: true, number: true, content: true, wordCount: true, authorNote: true, updatedAt: true },
+    });
+
+    // Invalidate cache
+    invalidateCache(`story:${chapter.story.slug}`, "stories:*");
+
+    // Notify author
+    prisma.notification.create({
+      data: {
+        userId: chapter.story.authorId,
+        type: "system",
+        title: "Chương đã được chỉnh sửa",
+        message: `Kiểm duyệt viên ${modUser.name} đã chỉnh sửa chương ${chapter.number}: "${chapter.title}" của truyện "${chapter.story.title}".`,
+        link: `/write/${chapter.story.id}`,
+      },
+    }).catch(() => {});
+
+    res.json({ message: "Đã cập nhật chương", chapter: updated });
+  } catch (error) {
+    console.error("Error editing chapter:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // ─── POST /api/mod/stories/:id/copy — sao chép truyện (Admin / Super Mod) ──
 router.post("/stories/:id/copy", authRequired, modRequired, async (req: AuthRequest, res: Response) => {
   try {
