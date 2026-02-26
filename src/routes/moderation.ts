@@ -699,4 +699,96 @@ router.put("/stories/:id/edit", authRequired, modRequired, async (req: AuthReque
   }
 });
 
+// ─── POST /api/mod/stories/:id/copy — sao chép truyện (Admin / Super Mod) ──
+router.post("/stories/:id/copy", authRequired, modRequired, async (req: AuthRequest, res: Response) => {
+  try {
+    const modUser = (req as any).modUser;
+    if (modUser.role !== "admin" && !modUser.isSuperMod) {
+      return res.status(403).json({ error: "Chỉ Admin hoặc Super Moderator mới có quyền copy truyện" });
+    }
+
+    // Fetch original story with chapters and tags
+    const original = await prisma.story.findUnique({
+      where: { id: req.params.id },
+      include: {
+        chapters: { orderBy: { number: "asc" } },
+        storyTags: { select: { tagId: true } },
+      },
+    });
+    if (!original) return res.status(404).json({ error: "Story not found" });
+
+    // Generate unique slug
+    const baseSlug = original.slug + "-copy";
+    let slug = baseSlug;
+    let attempt = 0;
+    while (true) {
+      const existing = await prisma.story.findUnique({ where: { slug }, select: { id: true } });
+      if (!existing) break;
+      attempt++;
+      slug = `${baseSlug}-${attempt}`;
+    }
+
+    // Create new story owned by the mod/admin user, with all chapters
+    const copied = await prisma.$transaction(async (tx) => {
+      const newStory = await tx.story.create({
+        data: {
+          title: original.title + " (bản sao)",
+          slug,
+          description: original.description,
+          coverImage: original.coverImage,
+          genre: original.genre,
+          tags: original.tags,
+          categoryId: original.categoryId,
+          status: original.status,
+          approvalStatus: "approved",
+          coverApprovalStatus: original.coverApprovalStatus === "approved" ? "approved" : "pending",
+          isAdult: original.isAdult,
+          theme: original.theme,
+          expectedChapters: original.expectedChapters,
+          worldBuilding: original.worldBuilding,
+          characters: original.characters,
+          plotOutline: original.plotOutline,
+          targetAudience: original.targetAudience,
+          postSchedule: original.postSchedule,
+          authorId: modUser.id,
+          // Copy tags
+          ...(original.storyTags.length > 0
+            ? { storyTags: { create: original.storyTags.map((st) => ({ tagId: st.tagId })) } }
+            : {}),
+        },
+      });
+
+      // Copy all chapters
+      if (original.chapters.length > 0) {
+        await tx.chapter.createMany({
+          data: original.chapters.map((ch) => ({
+            title: ch.title,
+            number: ch.number,
+            content: ch.content,
+            wordCount: ch.wordCount,
+            authorNote: ch.authorNote,
+            isLocked: false,
+            price: 0,
+            approvalStatus: "approved",
+            storyId: newStory.id,
+          })),
+        });
+      }
+
+      return newStory;
+    });
+
+    res.status(201).json({
+      message: `Đã sao chép truyện thành công (${original.chapters.length} chương)`,
+      story: copied,
+    });
+  } catch (error: any) {
+    if (error.code === "P2002") {
+      return res.status(409).json({ error: "Slug bị trùng, vui lòng thử lại" });
+    }
+    console.error("Error copying story:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 export default router;

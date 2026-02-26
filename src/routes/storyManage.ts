@@ -57,7 +57,7 @@ async function notifyModerators(opts: {
 router.get("/stories", authRequired, async (req: AuthRequest, res: Response) => {
   try {
     const user = await prisma.user.findUnique({ where: { email: req.user!.email } });
-    if (!user || user.role !== "author") {
+    if (!user || (user.role !== "author" && user.role !== "admin" && user.role !== "moderator")) {
       return res.status(403).json({ error: "Bạn chưa đăng ký làm tác giả" });
     }
 
@@ -147,7 +147,7 @@ router.get("/stories/:id", authRequired, async (req: AuthRequest, res: Response)
 router.post("/stories", authRequired, async (req: AuthRequest, res: Response) => {
   try {
     const user = await prisma.user.findUnique({ where: { email: req.user!.email } });
-    if (!user || user.role !== "author") {
+    if (!user || (user.role !== "author" && user.role !== "admin" && user.role !== "moderator")) {
       return res.status(403).json({ error: "Bạn chưa đăng ký làm tác giả" });
     }
 
