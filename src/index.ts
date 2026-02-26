@@ -51,7 +51,7 @@ import questsRouter from "./routes/quests";
 import { startTelegramPolling } from "./lib/telegram";
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = Number(process.env.PORT) || 5000;
 
 app.disable("x-powered-by");
 
@@ -218,8 +218,8 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
 });
 
 // ─── Start server ────────────────────────────────
-const server = app.listen(PORT, () => {
-  console.log(`🚀 VStory Backend running at http://localhost:${PORT}`);
+const server = app.listen(PORT, "0.0.0.0", () => {
+  console.log(`🚀 VStory Backend running at http://0.0.0.0:${PORT}`);
   console.log(`📖 API docs: http://localhost:${PORT}/api/health`);
   startTelegramPolling();
 });
