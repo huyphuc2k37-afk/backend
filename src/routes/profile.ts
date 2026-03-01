@@ -5,6 +5,19 @@ import { compressBase64Image } from "../lib/compressImage";
 
 const router = Router();
 
+/**
+ * Normalize email (Gmail dot-trick / + alias prevention)
+ */
+function normalizeEmail(email: string): string {
+  const [local, domain] = email.toLowerCase().trim().split("@");
+  if (!local || !domain) return email.toLowerCase().trim();
+  if (domain === "gmail.com" || domain === "googlemail.com") {
+    const cleaned = local.replace(/\./g, "").replace(/\+.*$/, "");
+    return `${cleaned}@gmail.com`;
+  }
+  return `${local}@${domain}`;
+}
+
 // ── Helpers ──────────────────────────────────────
 function generateReferralCode(): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -24,8 +37,9 @@ async function createNotificationSafe(args: Parameters<typeof prisma.notificatio
 // GET /api/profile — get current user profile
 router.get("/", authRequired, async (req: AuthRequest, res: Response) => {
   try {
+    const normalizedEmail = normalizeEmail(req.user!.email);
     let user = await prisma.user.findUnique({
-      where: { email: req.user!.email },
+      where: { email: normalizedEmail },
       include: {
         stories: {
           select: { id: true, title: true, slug: true, views: true, likes: true, status: true, approvalStatus: true, createdAt: true },
@@ -39,9 +53,9 @@ router.get("/", authRequired, async (req: AuthRequest, res: Response) => {
     // Auto-create user if first login (use upsert to prevent race condition on concurrent first requests)
     if (!user) {
       user = await prisma.user.upsert({
-        where: { email: req.user!.email },
+        where: { email: normalizedEmail },
         create: {
-          email: req.user!.email,
+          email: normalizedEmail,
           name: req.user!.name || "Người dùng",
           image: req.user!.image,
         },

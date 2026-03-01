@@ -7,6 +7,22 @@ import { getAuthSyncSecret, getJwtApiSecret } from "../lib/secrets";
 
 const router = Router();
 
+/**
+ * Normalize an email address to prevent Gmail dot-trick abuse.
+ * Gmail ignores dots and everything after + in the local part.
+ * e.g. h.i.h.iha+spam@gmail.com → hihiha@gmail.com
+ */
+function normalizeEmail(email: string): string {
+  const [local, domain] = email.toLowerCase().trim().split("@");
+  if (!local || !domain) return email.toLowerCase().trim();
+  // Only normalize Gmail (and googlemail) addresses
+  if (domain === "gmail.com" || domain === "googlemail.com") {
+    const cleaned = local.replace(/\./g, "").replace(/\+.*$/, "");
+    return `${cleaned}@gmail.com`;
+  }
+  return `${local}@${domain}`;
+}
+
 // Lazy Supabase client — only created when auth endpoints are called
 let _supabase: ReturnType<typeof createClient> | null = null;
 function getSupabase() {
@@ -25,8 +41,9 @@ function getSupabase() {
 router.post("/register", async (req: Request, res: Response) => {
   try {
     const { email: rawEmail, password, name: rawName } = req.body;
-    const email = typeof rawEmail === "string" ? rawEmail.trim() : "";
+    const emailInput = typeof rawEmail === "string" ? rawEmail.trim() : "";
     const name = typeof rawName === "string" ? rawName.trim() : "";
+    const email = normalizeEmail(emailInput);
 
     if (!email || !password || !name) {
       return res.status(400).json({ error: "Vui lòng điền đầy đủ thông tin" });
@@ -102,11 +119,13 @@ router.post("/register", async (req: Request, res: Response) => {
 // ─── POST /api/auth/verify — xác nhận mã OTP từ email ──
 router.post("/verify", async (req: Request, res: Response) => {
   try {
-    const { email, code } = req.body;
+    const { email: rawVerifyEmail, code } = req.body;
 
-    if (!email || !code) {
+    if (!rawVerifyEmail || !code) {
       return res.status(400).json({ error: "Thiếu email hoặc mã xác nhận" });
     }
+
+    const email = normalizeEmail(rawVerifyEmail);
 
     // Verify OTP with Supabase
     const { data, error } = await getSupabase().auth.verifyOtp({
@@ -136,12 +155,13 @@ router.post("/verify", async (req: Request, res: Response) => {
 // ─── POST /api/auth/login — đăng nhập bằng email ──
 router.post("/login", async (req: Request, res: Response) => {
   try {
-    const { email, password } = req.body;
+    const { email: rawEmail, password } = req.body;
 
-    if (!email || !password) {
+    if (!rawEmail || !password) {
       return res.status(400).json({ error: "Vui lòng nhập email và mật khẩu" });
     }
 
+    const email = normalizeEmail(rawEmail);
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user) {
       return res.status(401).json({ error: "Email hoặc mật khẩu không đúng" });
@@ -204,8 +224,9 @@ router.post("/login", async (req: Request, res: Response) => {
 // ─── POST /api/auth/resend — gửi lại mã xác nhận ──
 router.post("/resend", async (req: Request, res: Response) => {
   try {
-    const { email } = req.body;
-    if (!email) return res.status(400).json({ error: "Thiếu email" });
+    const { email: rawResendEmail } = req.body;
+    if (!rawResendEmail) return res.status(400).json({ error: "Thiếu email" });
+    const email = normalizeEmail(rawResendEmail);
 
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user) return res.status(404).json({ error: "Không tìm thấy tài khoản" });
@@ -238,8 +259,9 @@ router.post("/sync", async (req: Request, res: Response) => {
       return res.status(403).json({ error: "Forbidden" });
     }
 
-    const { email, name, image } = req.body;
-    if (!email) return res.status(400).json({ error: "Email required" });
+    const { email: rawEmail, name, image } = req.body;
+    if (!rawEmail) return res.status(400).json({ error: "Email required" });
+    const email = normalizeEmail(rawEmail);
 
     let user = await prisma.user.findUnique({ where: { email } });
     if (!user) {
