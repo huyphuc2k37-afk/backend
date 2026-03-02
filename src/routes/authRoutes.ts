@@ -176,7 +176,21 @@ router.post("/login", async (req: Request, res: Response) => {
       return res.status(400).json({ error: "Vui lòng nhập email và mật khẩu" });
     }
 
+    // Check if IP is banned
+    const clientIP = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.ip || "unknown";
+    const bannedIP = await prisma.bannedIP.findUnique({ where: { ip: clientIP } });
+    if (bannedIP) {
+      return res.status(403).json({ error: "IP của bạn đã bị chặn do spam. Liên hệ admin nếu đây là nhầm lẫn." });
+    }
+
     const email = normalizeEmail(rawEmail);
+
+    // Check if email is banned
+    const bannedEmail = await prisma.bannedEmail.findUnique({ where: { email } });
+    if (bannedEmail) {
+      return res.status(403).json({ error: "Tài khoản này đã bị chặn. Liên hệ admin nếu đây là nhầm lẫn." });
+    }
+
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user) {
       return res.status(401).json({ error: "Email hoặc mật khẩu không đúng" });
