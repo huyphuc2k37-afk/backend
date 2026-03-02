@@ -158,6 +158,16 @@ app.use("/api/auth/login", authLimiter);
 app.use("/api/auth/register", authLimiter);
 app.use("/api/auth/resend", authLimiter);
 
+// Very strict: max 3 registrations per hour per IP (anti-spam)
+const registerSpamLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 3,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Bạn đã đăng ký quá nhiều tài khoản. Vui lòng thử lại sau 1 giờ." },
+});
+app.use("/api/auth/register", registerSpamLimiter);
+
 // Write: 30 requests per minute for write operations
 const writeLimiter = rateLimit({
   windowMs: 60 * 1000,

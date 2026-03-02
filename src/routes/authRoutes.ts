@@ -40,6 +40,13 @@ function getSupabase() {
 // ─── POST /api/auth/register — đăng ký bằng email ──
 router.post("/register", async (req: Request, res: Response) => {
   try {
+    // Check if IP is banned
+    const clientIP = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.ip || "unknown";
+    const banned = await prisma.bannedIP.findUnique({ where: { ip: clientIP } });
+    if (banned) {
+      return res.status(403).json({ error: "IP của bạn đã bị chặn do spam. Liên hệ admin nếu đây là nhầm lẫn." });
+    }
+
     const { email: rawEmail, password, name: rawName } = req.body;
     const emailInput = typeof rawEmail === "string" ? rawEmail.trim() : "";
     const name = typeof rawName === "string" ? rawName.trim() : "";
@@ -252,6 +259,13 @@ router.post("/resend", async (req: Request, res: Response) => {
 // ─── POST /api/auth/sync — sync/upsert Google user and return role ──
 router.post("/sync", async (req: Request, res: Response) => {
   try {
+    // Check if IP is banned
+    const clientIP = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.ip || "unknown";
+    const banned = await prisma.bannedIP.findUnique({ where: { ip: clientIP } });
+    if (banned) {
+      return res.status(403).json({ error: "IP của bạn đã bị chặn do spam." });
+    }
+
     // Verify shared secret — only NextAuth server-side can call this
     const syncSecret = req.headers["x-sync-secret"];
     const expectedSyncSecret = getAuthSyncSecret();

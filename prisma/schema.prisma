@@ -515,6 +515,17 @@ model ViewLog {
   @@index([createdAt])
 }
 
+// ─── Banned IPs (Anti-spam) ──────────────────────
+model BannedIP {
+  id        String   @id @default(cuid())
+  ip        String   @unique
+  reason    String?  // lý do ban
+  bannedBy  String?  // admin email
+  createdAt DateTime @default(now())
+
+  @@index([ip])
+}
+
 // ─── Daily Quests (Nhiệm vụ hàng ngày) ──────────
 model DailyQuest {
   id              String   @id @default(cuid())

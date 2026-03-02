@@ -762,4 +762,58 @@ router.get("/users/search", authRequired, adminRequired, async (req: AuthRequest
   }
 });
 
+// ─── GET /api/admin/banned-ips — danh sách IP bị chặn ──
+router.get("/banned-ips", authRequired, adminRequired, async (_req: AuthRequest, res: Response) => {
+  try {
+    const ips = await prisma.bannedIP.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 200,
+    });
+    res.json({ ips });
+  } catch (error) {
+    console.error("Error fetching banned IPs:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ─── POST /api/admin/banned-ips — ban IP ──
+router.post("/banned-ips", authRequired, adminRequired, async (req: AuthRequest, res: Response) => {
+  try {
+    const { ip, reason } = req.body;
+    if (!ip || typeof ip !== "string") {
+      return res.status(400).json({ error: "IP không hợp lệ" });
+    }
+    const trimmedIP = ip.trim();
+    const admin = (req as any).adminUser;
+
+    const existing = await prisma.bannedIP.findUnique({ where: { ip: trimmedIP } });
+    if (existing) {
+      return res.status(400).json({ error: "IP này đã bị chặn trước đó" });
+    }
+
+    const banned = await prisma.bannedIP.create({
+      data: {
+        ip: trimmedIP,
+        reason: reason || "Spam",
+        bannedBy: admin.email,
+      },
+    });
+    res.json({ success: true, banned });
+  } catch (error) {
+    console.error("Error banning IP:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ─── DELETE /api/admin/banned-ips/:id — unban IP ──
+router.delete("/banned-ips/:id", authRequired, adminRequired, async (req: AuthRequest, res: Response) => {
+  try {
+    await prisma.bannedIP.delete({ where: { id: req.params.id } });
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Error unbanning IP:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 export default router;
