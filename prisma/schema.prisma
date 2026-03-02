@@ -526,6 +526,17 @@ model BannedIP {
   @@index([ip])
 }
 
+// ─── Banned Emails (Anti-spam) ───────────────────
+model BannedEmail {
+  id        String   @id @default(cuid())
+  email     String   @unique  // normalized email
+  reason    String?  // lý do ban
+  bannedBy  String?  // admin email
+  createdAt DateTime @default(now())
+
+  @@index([email])
+}
+
 // ─── Daily Quests (Nhiệm vụ hàng ngày) ──────────
 model DailyQuest {
   id              String   @id @default(cuid())

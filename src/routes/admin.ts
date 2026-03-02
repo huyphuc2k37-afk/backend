@@ -816,4 +816,64 @@ router.delete("/banned-ips/:id", authRequired, adminRequired, async (req: AuthRe
   }
 });
 
+// ─── GET /api/admin/banned-emails — danh sách email bị chặn ──
+router.get("/banned-emails", authRequired, adminRequired, async (_req: AuthRequest, res: Response) => {
+  try {
+    const emails = await prisma.bannedEmail.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 200,
+    });
+    res.json({ emails });
+  } catch (error) {
+    console.error("Error fetching banned emails:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ─── POST /api/admin/banned-emails — ban email ──
+router.post("/banned-emails", authRequired, adminRequired, async (req: AuthRequest, res: Response) => {
+  try {
+    const { email: rawEmail, reason } = req.body;
+    if (!rawEmail || typeof rawEmail !== "string") {
+      return res.status(400).json({ error: "Email không hợp lệ" });
+    }
+    // Normalize to catch Gmail dot-trick variants
+    const [local, domain] = rawEmail.toLowerCase().trim().split("@");
+    let normalizedEmail = rawEmail.toLowerCase().trim();
+    if (domain === "gmail.com" || domain === "googlemail.com") {
+      const cleaned = local.replace(/\./g, "").replace(/\+.*$/, "");
+      normalizedEmail = `${cleaned}@gmail.com`;
+    }
+    const admin = (req as any).adminUser;
+
+    const existing = await prisma.bannedEmail.findUnique({ where: { email: normalizedEmail } });
+    if (existing) {
+      return res.status(400).json({ error: "Email này đã bị chặn trước đó" });
+    }
+
+    const banned = await prisma.bannedEmail.create({
+      data: {
+        email: normalizedEmail,
+        reason: reason || "Spam",
+        bannedBy: admin.email,
+      },
+    });
+    res.json({ success: true, banned });
+  } catch (error) {
+    console.error("Error banning email:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ─── DELETE /api/admin/banned-emails/:id — unban email ──
+router.delete("/banned-emails/:id", authRequired, adminRequired, async (req: AuthRequest, res: Response) => {
+  try {
+    await prisma.bannedEmail.delete({ where: { id: req.params.id } });
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Error unbanning email:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 export default router;

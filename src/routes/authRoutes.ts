@@ -52,6 +52,14 @@ router.post("/register", async (req: Request, res: Response) => {
     const name = typeof rawName === "string" ? rawName.trim() : "";
     const email = normalizeEmail(emailInput);
 
+    // Check if email is banned
+    if (email) {
+      const bannedEmail = await prisma.bannedEmail.findUnique({ where: { email } });
+      if (bannedEmail) {
+        return res.status(403).json({ error: "Email này đã bị chặn. Liên hệ admin nếu đây là nhầm lẫn." });
+      }
+    }
+
     if (!email || !password || !name) {
       return res.status(400).json({ error: "Vui lòng điền đầy đủ thông tin" });
     }
@@ -276,6 +284,12 @@ router.post("/sync", async (req: Request, res: Response) => {
     const { email: rawEmail, name, image } = req.body;
     if (!rawEmail) return res.status(400).json({ error: "Email required" });
     const email = normalizeEmail(rawEmail);
+
+    // Check if email is banned
+    const bannedEmail = await prisma.bannedEmail.findUnique({ where: { email } });
+    if (bannedEmail) {
+      return res.status(403).json({ error: "Email này đã bị chặn." });
+    }
 
     let user = await prisma.user.findUnique({ where: { email } });
     if (!user) {
