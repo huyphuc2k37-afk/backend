@@ -54,6 +54,7 @@ const app = express();
 const PORT = Number(process.env.PORT) || 5000;
 
 app.disable("x-powered-by");
+app.set("trust proxy", true); // Required: Render/Vercel are reverse proxies — get real user IP from X-Forwarded-For
 
 // ─── Middleware ───────────────────────────────────
 const normalizeOrigin = (origin: string): string => {

@@ -8,18 +8,18 @@ const router = Router();
 const XU_PER_VIEW = 2; // xu tác giả nhận cho mỗi unique view
 
 // ─── In-memory view buffer for batch updates ────
-// Instead of instantly incrementing DB, we buffer views and flush every 30 min
+// Instead of instantly incrementing DB, we buffer views and flush every 5 min
 const viewBuffer = new Map<string, number>(); // storyId → count
 const viewedRecently = new Map<string, number>(); // "ip:slug" → timestamp
 const VIEW_COOLDOWN = 60 * 60 * 1000; // 1 view per IP per story per hour
 const MAX_VIEW_MAP_SIZE = 50_000;
+const FLUSH_INTERVAL = 5 * 60 * 1000; // flush every 5 minutes
 
 // ─── Settle view earnings for authors ────────────
-// Called after every view flush. For each story where views > lastSettledViews,
+// For each story where views > lastSettledViews,
 // calculate delta and credit author with XU_PER_VIEW × delta xu.
 async function settleViewEarnings() {
   try {
-    // Find all stories with unsettled views (approved only)
     const unsettled = await prisma.$queryRaw<
       { id: string; title: string; views: number; lastSettledViews: number; authorId: string }[]
     >`
@@ -42,17 +42,14 @@ async function settleViewEarnings() {
 
       try {
         await prisma.$transaction([
-          // 1. Mark these views as settled
           prisma.story.update({
             where: { id: story.id },
             data: { lastSettledViews: story.views },
           }),
-          // 2. Credit author's wallet
           prisma.user.update({
             where: { id: story.authorId },
             data: { coinBalance: { increment: earnings } },
           }),
-          // 3. Create earning record for transparency
           prisma.authorEarning.create({
             data: {
               type: "view",
@@ -78,8 +75,8 @@ async function settleViewEarnings() {
   }
 }
 
-// Flush buffered views to DB every 30 minutes, then settle earnings
-setInterval(async () => {
+// ─── Flush + Settle helper (reused on interval and startup) ────
+async function flushAndSettle() {
   // Clean expired IP dedup entries
   const now = Date.now();
   for (const [key, ts] of viewedRecently) {
@@ -88,7 +85,6 @@ setInterval(async () => {
 
   // Flush view buffer to DB
   if (viewBuffer.size === 0) {
-    // Even if no new views buffered, settle any pending views (e.g. from server restart)
     await settleViewEarnings();
     return;
   }
@@ -106,13 +102,21 @@ setInterval(async () => {
       // Story might have been deleted
     }
   }
-  // Invalidate ranking caches after view flush
   invalidateCache("ranking:*");
   console.log(`✅ View flush complete`);
 
   // Now settle view earnings for authors
   await settleViewEarnings();
-}, 30 * 60 * 1000); // every 30 minutes
+}
+
+// Flush every 5 minutes
+setInterval(flushAndSettle, FLUSH_INTERVAL);
+
+// Startup: settle any unsettled views from before restart (runs once after 10s)
+setTimeout(async () => {
+  console.log("🚀 Startup: settling any pending view earnings...");
+  await settleViewEarnings();
+}, 10_000);
 
 // GET /api/stories/:slug — get single story detail
 router.get("/:slug", async (req: Request, res: Response) => {
