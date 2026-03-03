@@ -546,6 +546,7 @@ model DailyQuest {
   commented       Boolean  @default(false) // Nhiệm vụ 2: Bình luận 1 chương
   readMinutes     Int      @default(0)     // Phút đọc tích lũy trong ngày
   readCompleted   Boolean  @default(false) // Nhiệm vụ 3: Đọc >= 10 phút
+  adsWatched      Int      @default(0)     // Nhiệm vụ 4: Số quảng cáo đã xem (tối đa 5)
   coinsEarned     Int      @default(0)     // Tổng xu đã nhận từ nhiệm vụ ngày đó
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
