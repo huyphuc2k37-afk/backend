@@ -38,6 +38,13 @@ async function createNotificationSafe(args: Parameters<typeof prisma.notificatio
 router.get("/", authRequired, async (req: AuthRequest, res: Response) => {
   try {
     const normalizedEmail = normalizeEmail(req.user!.email);
+
+    // Check if this email is banned before doing anything
+    const bannedEmail = await prisma.bannedEmail.findUnique({ where: { email: normalizedEmail } });
+    if (bannedEmail) {
+      return res.status(403).json({ error: "Tài khoản này đã bị chặn. Liên hệ admin nếu đây là nhầm lẫn." });
+    }
+
     let user = await prisma.user.findUnique({
       where: { email: normalizedEmail },
       include: {
