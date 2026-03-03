@@ -11,7 +11,7 @@ router.get("/", async (req: Request, res: Response) => {
     const includeLocked =
       req.query.includeLocked === "1" || req.query.includeLocked === "true";
 
-    const [stories, chapters] = await Promise.all([
+    const [stories, chapters, authors] = await Promise.all([
       prisma.story.findMany({
         where: { approvalStatus: "approved" },
         select: { slug: true, updatedAt: true },
@@ -31,6 +31,11 @@ router.get("/", async (req: Request, res: Response) => {
         orderBy: { updatedAt: "desc" },
         take: 50000,
       }),
+      prisma.user.findMany({
+        where: { role: { in: ["author", "mod", "admin"] } },
+        select: { id: true, updatedAt: true },
+        orderBy: { updatedAt: "desc" },
+      }),
     ]);
 
     res.set("Cache-Control", "public, max-age=3600, stale-while-revalidate=7200");
@@ -41,6 +46,7 @@ router.get("/", async (req: Request, res: Response) => {
         chapterId: c.id,
         updatedAt: c.updatedAt,
       })),
+      authors: authors.map((a) => ({ id: a.id, updatedAt: a.updatedAt })),
     });
   } catch (error) {
     console.error("Error generating sitemap data:", error);
