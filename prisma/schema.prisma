@@ -184,6 +184,7 @@ model Story {
   coverRejectionReason String? // lý do từ chối ảnh bìa
   tags            String?   // legacy: comma-separated (migrated to StoryTag)
   views           Int       @default(0)
+  lastSettledViews Int      @default(0) // views already paid to author (for view-earnings settlement)
   likes           Int       @default(0)
   averageRating   Float     @default(0)
   ratingCount     Int       @default(0)

@@ -73,18 +73,27 @@ router.get("/", authRequired, async (req: AuthRequest, res: Response) => {
       _count: true,
     });
 
+    // Tổng doanh thu từ lượt xem
+    const viewRevenue = await prisma.authorEarning.aggregate({
+      where: { authorId: user.id, type: "view" },
+      _sum: { amount: true },
+      _count: true,
+    });
+
     const totalChaptersSold = purchaseRevenue._count || 0;
     const totalTips = tipRevenue._count || 0;
+    const totalViewSettlements = viewRevenue._count || 0;
 
     // Doanh thu theo truyện
-    const revenueByStory: Record<string, { title: string; purchases: number; tips: number; revenue: number }> = {};
+    const revenueByStory: Record<string, { title: string; purchases: number; tips: number; viewEarnings: number; revenue: number }> = {};
     for (const e of allEarnings) {
       const sid = e.storyId || "unknown";
       if (!revenueByStory[sid]) {
-        revenueByStory[sid] = { title: e.storyTitle || "Không xác định", purchases: 0, tips: 0, revenue: 0 };
+        revenueByStory[sid] = { title: e.storyTitle || "Không xác định", purchases: 0, tips: 0, viewEarnings: 0, revenue: 0 };
       }
       if (e.type === "purchase") revenueByStory[sid].purchases++;
       if (e.type === "tip") revenueByStory[sid].tips++;
+      if (e.type === "view") revenueByStory[sid].viewEarnings += e.amount;
       revenueByStory[sid].revenue += e.amount;
     }
     const topStories = Object.values(revenueByStory).sort((a, b) => b.revenue - a.revenue);
@@ -110,16 +119,17 @@ router.get("/", authRequired, async (req: AuthRequest, res: Response) => {
       orderBy: { createdAt: "asc" },
     });
 
-    const dailyMap: Record<string, { purchases: number; tips: number; total: number }> = {};
+    const dailyMap: Record<string, { purchases: number; tips: number; views: number; total: number }> = {};
     for (let i = 0; i < 30; i++) {
       const d = new Date(Date.now() - (29 - i) * 24 * 60 * 60 * 1000);
       const key = d.toISOString().slice(0, 10);
-      dailyMap[key] = { purchases: 0, tips: 0, total: 0 };
+      dailyMap[key] = { purchases: 0, tips: 0, views: 0, total: 0 };
     }
     for (const e of dailyEarnings) {
       const key = e.createdAt.toISOString().slice(0, 10);
       if (dailyMap[key]) {
         if (e.type === "purchase") dailyMap[key].purchases += e.amount;
+        else if (e.type === "view") dailyMap[key].views += e.amount;
         else dailyMap[key].tips += e.amount;
         dailyMap[key].total += e.amount;
       }
@@ -137,8 +147,10 @@ router.get("/", authRequired, async (req: AuthRequest, res: Response) => {
       thisMonthRevenue,
       totalChaptersSold,
       totalTips,
+      totalViewSettlements,
       purchaseRevenue: purchaseRevenue._sum.amount || 0,
       tipRevenue: tipRevenue._sum.amount || 0,
+      viewRevenue: viewRevenue._sum.amount || 0,
       pendingWithdraw: pendingWithdraw._sum.amount || 0,
       referralRevenue,
       topStories,

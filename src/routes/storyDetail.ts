@@ -4,6 +4,9 @@ import { cached, SHORT_TTL, invalidateCache } from "../lib/cache";
 
 const router = Router();
 
+// ─── View Earning Config ─────────────────────────
+const XU_PER_VIEW = 2; // xu tác giả nhận cho mỗi unique view
+
 // ─── In-memory view buffer for batch updates ────
 // Instead of instantly incrementing DB, we buffer views and flush every 30 min
 const viewBuffer = new Map<string, number>(); // storyId → count
@@ -11,7 +14,71 @@ const viewedRecently = new Map<string, number>(); // "ip:slug" → timestamp
 const VIEW_COOLDOWN = 60 * 60 * 1000; // 1 view per IP per story per hour
 const MAX_VIEW_MAP_SIZE = 50_000;
 
-// Flush buffered views to DB every 30 minutes
+// ─── Settle view earnings for authors ────────────
+// Called after every view flush. For each story where views > lastSettledViews,
+// calculate delta and credit author with XU_PER_VIEW × delta xu.
+async function settleViewEarnings() {
+  try {
+    // Find all stories with unsettled views (approved only)
+    const unsettled = await prisma.$queryRaw<
+      { id: string; title: string; views: number; lastSettledViews: number; authorId: string }[]
+    >`
+      SELECT id, title, views, "lastSettledViews", "authorId"
+      FROM "Story"
+      WHERE views > "lastSettledViews"
+        AND "approvalStatus" = 'approved'
+    `;
+
+    if (unsettled.length === 0) return;
+
+    console.log(`💰 Settling view earnings for ${unsettled.length} stories...`);
+    let totalSettled = 0;
+
+    for (const story of unsettled) {
+      const delta = story.views - story.lastSettledViews;
+      if (delta <= 0) continue;
+
+      const earnings = delta * XU_PER_VIEW;
+
+      try {
+        await prisma.$transaction([
+          // 1. Mark these views as settled
+          prisma.story.update({
+            where: { id: story.id },
+            data: { lastSettledViews: story.views },
+          }),
+          // 2. Credit author's wallet
+          prisma.user.update({
+            where: { id: story.authorId },
+            data: { coinBalance: { increment: earnings } },
+          }),
+          // 3. Create earning record for transparency
+          prisma.authorEarning.create({
+            data: {
+              type: "view",
+              amount: earnings,
+              authorId: story.authorId,
+              storyId: story.id,
+              storyTitle: story.title,
+              chapterTitle: `${delta} lượt xem × ${XU_PER_VIEW} xu`,
+            },
+          }),
+        ]);
+        totalSettled += earnings;
+      } catch (err) {
+        console.error(`❌ Failed to settle views for story ${story.id}:`, err);
+      }
+    }
+
+    if (totalSettled > 0) {
+      console.log(`✅ View earnings settled: ${totalSettled} xu total`);
+    }
+  } catch (err) {
+    console.error("❌ settleViewEarnings error:", err);
+  }
+}
+
+// Flush buffered views to DB every 30 minutes, then settle earnings
 setInterval(async () => {
   // Clean expired IP dedup entries
   const now = Date.now();
@@ -20,7 +87,11 @@ setInterval(async () => {
   }
 
   // Flush view buffer to DB
-  if (viewBuffer.size === 0) return;
+  if (viewBuffer.size === 0) {
+    // Even if no new views buffered, settle any pending views (e.g. from server restart)
+    await settleViewEarnings();
+    return;
+  }
   const entries = Array.from(viewBuffer.entries());
   viewBuffer.clear();
 
@@ -38,6 +109,9 @@ setInterval(async () => {
   // Invalidate ranking caches after view flush
   invalidateCache("ranking:*");
   console.log(`✅ View flush complete`);
+
+  // Now settle view earnings for authors
+  await settleViewEarnings();
 }, 30 * 60 * 1000); // every 30 minutes
 
 // GET /api/stories/:slug — get single story detail
