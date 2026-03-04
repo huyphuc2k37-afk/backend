@@ -5,6 +5,17 @@ import { splitRevenue } from "../lib/revenueSplit";
 
 const router = Router();
 
+/** Derive a direct cover URL from a Story record */
+function deriveCoverUrl(story: { coverImage?: string | null; coverApprovalStatus?: string; approvalStatus?: string }): string | null {
+  if (!story.coverImage) return null;
+  if (story.coverApprovalStatus === "rejected") return null;
+  if (story.approvalStatus !== "approved" && story.coverApprovalStatus !== "approved") return null;
+  if (story.coverImage.startsWith("http://") || story.coverImage.startsWith("https://")) {
+    return story.coverImage;
+  }
+  return null;
+}
+
 async function createNotificationSafe(args: Parameters<typeof prisma.notification.create>[0]) {
   try {
     await prisma.notification.create(args);
@@ -47,13 +58,21 @@ router.get("/:id", async (req, res: Response) => {
         views: true,
         likes: true,
         updatedAt: true,
+        coverImage: true,
+        coverApprovalStatus: true,
+        approvalStatus: true,
         _count: { select: { chapters: true, bookmarks: true, comments: true } },
       },
       orderBy: { updatedAt: "desc" },
       take: 100,
     });
 
-    res.json({ author, stories });
+    const mappedStories = stories.map((s) => {
+      const { coverImage, coverApprovalStatus, approvalStatus, ...rest } = s;
+      return { ...rest, coverUrl: deriveCoverUrl(s) };
+    });
+
+    res.json({ author, stories: mappedStories });
   } catch (error) {
     console.error("Error fetching author profile:", error);
     res.status(500).json({ error: "Internal server error" });

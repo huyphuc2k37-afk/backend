@@ -160,9 +160,10 @@ router.get("/:id/cover", async (req: Request, res: Response) => {
       : story.coverApprovalStatus === "approved";
     if (!coverOk) return res.status(403).end();
 
-    // If coverImage is a URL (cloud storage), redirect (302 so browser doesn't cache permanently)
+    // If coverImage is a URL (cloud storage), redirect with proper caching
+    // URL includes ?v=updatedAt cache-buster from frontend, so we can cache aggressively
     if (story.coverImage.startsWith("http://") || story.coverImage.startsWith("https://")) {
-      res.set("Cache-Control", "no-store, no-cache, must-revalidate");
+      res.set("Cache-Control", "public, max-age=86400, stale-while-revalidate=604800");
       return res.redirect(302, story.coverImage);
     }
 

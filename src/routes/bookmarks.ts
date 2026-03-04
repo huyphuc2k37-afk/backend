@@ -4,6 +4,17 @@ import { AuthRequest, authRequired } from "../middleware/auth";
 
 const router = Router();
 
+/** Derive a direct cover URL from a Story record */
+function deriveCoverUrl(story: { coverImage?: string | null; coverApprovalStatus?: string; approvalStatus?: string }): string | null {
+  if (!story.coverImage) return null;
+  if (story.coverApprovalStatus === "rejected") return null;
+  if (story.approvalStatus !== "approved" && story.coverApprovalStatus !== "approved") return null;
+  if (story.coverImage.startsWith("http://") || story.coverImage.startsWith("https://")) {
+    return story.coverImage;
+  }
+  return null;
+}
+
 // GET /api/bookmarks/check?storyId=xxx — check if story is bookmarked
 router.get("/check", authRequired, async (req: AuthRequest, res: Response) => {
   try {
@@ -49,6 +60,9 @@ router.get("/", authRequired, async (req: AuthRequest, res: Response) => {
             genre: true,
             status: true,
             views: true,
+            coverImage: true,
+            coverApprovalStatus: true,
+            approvalStatus: true,
             author: { select: { id: true, name: true, image: true } },
             _count: { select: { chapters: true } },
           },
@@ -58,7 +72,16 @@ router.get("/", authRequired, async (req: AuthRequest, res: Response) => {
       take: 200,
     });
 
-    res.json(bookmarks);
+    // Map to include coverUrl and strip raw cover fields
+    const mapped = bookmarks.map((bm: any) => {
+      const { coverImage, coverApprovalStatus, approvalStatus, ...storyRest } = bm.story;
+      return {
+        ...bm,
+        story: { ...storyRest, coverUrl: deriveCoverUrl(bm.story) },
+      };
+    });
+
+    res.json(mapped);
   } catch (error) {
     console.error("Error fetching bookmarks:", error);
     res.status(500).json({ error: "Internal server error" });
