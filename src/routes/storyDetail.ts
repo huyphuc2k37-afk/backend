@@ -166,23 +166,27 @@ router.get("/:slug", async (req: Request, res: Response) => {
       return res.status(403).json({ error: "Truyện chưa được duyệt" });
     }
 
-    // Buffer view increment (flushed every 30 min)
-    const rawIp = req.ip || req.headers["x-forwarded-for"] || "unknown";
-    const viewerIp = typeof rawIp === "string" ? rawIp.split(",")[0].trim() : "unknown";
-    const viewKey = `${viewerIp}:${slug}`;
-    const lastViewed = viewedRecently.get(viewKey);
-    if (!lastViewed || Date.now() - lastViewed > VIEW_COOLDOWN) {
-      if (viewedRecently.size >= MAX_VIEW_MAP_SIZE) {
-        const oldest = viewedRecently.keys().next().value;
-        if (oldest) viewedRecently.delete(oldest);
+    // Only count views from real browser clients (header gated)
+    // ISR server-side fetches and bots won't send this header
+    const shouldCountView = req.headers["x-count-view"] === "1";
+    if (shouldCountView) {
+      const rawIp = req.ip || req.headers["x-forwarded-for"] || "unknown";
+      const viewerIp = typeof rawIp === "string" ? rawIp.split(",")[0].trim() : "unknown";
+      const viewKey = `${viewerIp}:${slug}`;
+      const lastViewed = viewedRecently.get(viewKey);
+      if (!lastViewed || Date.now() - lastViewed > VIEW_COOLDOWN) {
+        if (viewedRecently.size >= MAX_VIEW_MAP_SIZE) {
+          const oldest = viewedRecently.keys().next().value;
+          if (oldest) viewedRecently.delete(oldest);
+        }
+        viewedRecently.set(viewKey, Date.now());
+        // Add to buffer instead of direct DB write
+        viewBuffer.set(story.id, (viewBuffer.get(story.id) || 0) + 1);
+        // Also log to ViewLog for analytics
+        prisma.viewLog.create({
+          data: { storyId: story.id, ip: viewerIp },
+        }).catch(() => {});
       }
-      viewedRecently.set(viewKey, Date.now());
-      // Add to buffer instead of direct DB write
-      viewBuffer.set(story.id, (viewBuffer.get(story.id) || 0) + 1);
-      // Also log to ViewLog for analytics
-      prisma.viewLog.create({
-        data: { storyId: story.id, ip: viewerIp },
-      }).catch(() => {});
     }
 
     // Flatten storyTags for cleaner response

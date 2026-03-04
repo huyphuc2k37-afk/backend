@@ -37,13 +37,26 @@ router.get("/stats", authRequired, adminRequired, async (_req: AuthRequest, res:
         prisma.withdrawal.count({ where: { status: "pending" } }),
       ]);
 
-    const [approvedDepositAmount, platformAgg] = await Promise.all([
+    const [approvedDepositAmount, platformAgg, questAgg, viewEarningsAgg, totalViewsAgg] = await Promise.all([
       prisma.deposit.aggregate({
         where: { status: "approved" },
         _sum: { amount: true },
       }),
       prisma.platformEarning.aggregate({
         _sum: { grossAmount: true, authorAmount: true, platformAmount: true, taxAmount: true },
+      }),
+      // Total xu dispensed from daily quests
+      prisma.dailyQuest.aggregate({
+        _sum: { coinsEarned: true },
+      }),
+      // Total xu dispensed from view earnings (author earnings type "view")
+      prisma.authorEarning.aggregate({
+        where: { type: "view" },
+        _sum: { amount: true },
+      }),
+      // Total views across all stories
+      prisma.story.aggregate({
+        _sum: { views: true },
       }),
     ]);
 
@@ -68,6 +81,12 @@ router.get("/stats", authRequired, adminRequired, async (_req: AuthRequest, res:
       platformNetIncome,
       taxTotal,
       authorNetPaid,
+      // Quest rewards
+      totalQuestXu: questAgg._sum.coinsEarned || 0,
+      // View-based earnings
+      totalViewEarningsXu: viewEarningsAgg._sum.amount || 0,
+      // Total views
+      totalViews: totalViewsAgg._sum.views || 0,
     });
   } catch (error) {
     console.error("Error fetching admin stats:", error);
