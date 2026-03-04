@@ -309,48 +309,49 @@ router.delete("/users", authRequired, adminRequired, async (req: AuthRequest, re
     // Xóa tất cả dữ liệu liên quan rồi xóa user
     // Story & Announcement không có onDelete:Cascade nên phải xóa thủ công
     for (const userId of ids) {
-      // Lấy danh sách story IDs của user này
-      const userStories = await prisma.story.findMany({
-        where: { authorId: userId },
-        select: { id: true },
-      });
-      const storyIds = userStories.map((s: { id: string }) => s.id);
-
-      if (storyIds.length > 0) {
-        // Lấy chapter IDs
-        const chapters = await prisma.chapter.findMany({
-          where: { storyId: { in: storyIds } },
+      await prisma.$transaction(async (tx) => {
+        // Lấy danh sách story IDs của user này
+        const userStories = await tx.story.findMany({
+          where: { authorId: userId },
           select: { id: true },
         });
-        const chapterIds = chapters.map((c: { id: string }) => c.id);
+        const storyIds = userStories.map((s: { id: string }) => s.id);
 
-        if (chapterIds.length > 0) {
-          // Xóa dữ liệu liên quan chapters
-          await prisma.chapterPurchase.deleteMany({ where: { chapterId: { in: chapterIds } } });
-          await prisma.comment.deleteMany({ where: { chapterId: { in: chapterIds } } });
-          await prisma.readHistory.deleteMany({ where: { chapterId: { in: chapterIds } } });
-          await prisma.chapter.deleteMany({ where: { id: { in: chapterIds } } });
+        if (storyIds.length > 0) {
+          // Lấy chapter IDs
+          const chapters = await tx.chapter.findMany({
+            where: { storyId: { in: storyIds } },
+            select: { id: true },
+          });
+          const chapterIds = chapters.map((c: { id: string }) => c.id);
+
+          if (chapterIds.length > 0) {
+            // Xóa dữ liệu liên quan chapters
+            await tx.chapterPurchase.deleteMany({ where: { chapterId: { in: chapterIds } } });
+            await tx.comment.deleteMany({ where: { chapterId: { in: chapterIds } } });
+            await tx.readHistory.deleteMany({ where: { chapterId: { in: chapterIds } } });
+            await tx.chapter.deleteMany({ where: { id: { in: chapterIds } } });
+          }
+
+          // Xóa dữ liệu liên quan stories
+          await tx.storyTag.deleteMany({ where: { storyId: { in: storyIds } } });
+          await tx.bookmark.deleteMany({ where: { storyId: { in: storyIds } } });
+          await tx.storyLike.deleteMany({ where: { storyId: { in: storyIds } } });
+          await tx.rating.deleteMany({ where: { storyId: { in: storyIds } } });
+          await tx.comment.deleteMany({ where: { storyId: { in: storyIds } } });
+          await tx.authorEarning.deleteMany({ where: { storyId: { in: storyIds } } });
+          await tx.story.deleteMany({ where: { id: { in: storyIds } } });
         }
 
-        // Xóa dữ liệu liên quan stories
-        await prisma.storyTag.deleteMany({ where: { storyId: { in: storyIds } } });
-        await prisma.bookmark.deleteMany({ where: { storyId: { in: storyIds } } });
-        await prisma.storyLike.deleteMany({ where: { storyId: { in: storyIds } } });
-        await prisma.rating.deleteMany({ where: { storyId: { in: storyIds } } });
-        await prisma.comment.deleteMany({ where: { storyId: { in: storyIds } } });
-        await prisma.authorEarning.deleteMany({ where: { storyId: { in: storyIds } } });
-        await prisma.story.deleteMany({ where: { id: { in: storyIds } } });
-      }
+        // Xóa announcements do user tạo
+        await tx.announcement.deleteMany({ where: { createdBy: userId } });
 
-      // Xóa announcements do user tạo
-      await prisma.announcement.deleteMany({ where: { createdBy: userId } });
+        // Xóa user
+        await tx.user.delete({ where: { id: userId } });
+      });
     }
 
-    const result = await prisma.user.deleteMany({
-      where: { id: { in: ids }, role: { not: "admin" } },
-    });
-
-    res.json({ success: true, deleted: result.count });
+    res.json({ success: true, deleted: ids.length });
   } catch (error) {
     console.error("Error deleting users:", error);
     res.status(500).json({ error: "Internal server error" });

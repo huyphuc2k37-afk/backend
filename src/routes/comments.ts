@@ -209,7 +209,7 @@ router.post("/", authRequired, async (req: AuthRequest, res: Response) => {
 
     const comment = await prisma.comment.create({
       data: {
-        content: content.trim(),
+        content: content.trim().replace(/</g, '&lt;').replace(/>/g, '&gt;'),
         userId: user.id,
         storyId: finalStoryId,
         chapterId: finalChapterId,

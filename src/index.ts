@@ -134,7 +134,7 @@ app.use(
   })
 );
 app.use(compression());
-app.use(express.json({ limit: "10mb" }));
+app.use(express.json({ limit: "200kb" }));
 
 // ─── Rate Limiting ───────────────────────────────
 // General: 200 requests per minute per IP
@@ -158,6 +158,7 @@ const authLimiter = rateLimit({
 app.use("/api/auth/login", authLimiter);
 app.use("/api/auth/register", authLimiter);
 app.use("/api/auth/resend", authLimiter);
+app.use("/api/auth/verify", authLimiter);
 
 // Very strict: max 3 registrations per hour per IP (anti-spam)
 const registerSpamLimiter = rateLimit({
@@ -186,6 +187,10 @@ app.get("/api/health", (_req, res) => {
 });
 
 // ─── Routes ──────────────────────────────────────
+// Story/chapter management needs larger body for content
+const largeBodyParser = express.json({ limit: "10mb" });
+app.use("/api/manage", largeBodyParser, storyManageRouter);
+
 app.use("/api/stories", storiesRouter);
 app.use("/api/stories", storyDetailRouter);  // handles /api/stories/:slug
 app.use("/api/chapters", chaptersRouter);
@@ -193,7 +198,6 @@ app.use("/api/bookmarks", bookmarksRouter);
 app.use("/api/ranking", rankingRouter);
 app.use("/api/profile", profileRouter);
 app.use("/api/comments", commentsRouter);
-app.use("/api/manage", storyManageRouter);
 app.use("/api/wallet", walletRouter);
 app.use("/api/revenue", revenueRouter);
 app.use("/api/admin", adminRouter);
