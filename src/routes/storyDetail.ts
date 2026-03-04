@@ -8,12 +8,23 @@ const router = Router();
 const XU_PER_VIEW = 2; // xu tác giả nhận cho mỗi unique view
 
 // ─── In-memory view buffer for batch updates ────
-// Instead of instantly incrementing DB, we buffer views and flush every 5 min
 const viewBuffer = new Map<string, number>(); // storyId → count
-const viewedRecently = new Map<string, number>(); // "ip:slug" → timestamp
+const viewedRecently = new Map<string, number>(); // "ip:slug" → timestamp (fast-path cache)
 const VIEW_COOLDOWN = 60 * 60 * 1000; // 1 view per IP per story per hour
 const MAX_VIEW_MAP_SIZE = 50_000;
 const FLUSH_INTERVAL = 5 * 60 * 1000; // flush every 5 minutes
+const DAILY_VIEW_CAP_PER_IP = 50; // max 50 unique story views per IP per day
+
+// ─── Banned IP cache (refresh every 5 min) ───────
+let bannedIPs = new Set<string>();
+async function refreshBannedIPs() {
+  try {
+    const banned = await prisma.bannedIP.findMany({ select: { ip: true } });
+    bannedIPs = new Set(banned.map((b) => b.ip));
+  } catch {}
+}
+refreshBannedIPs();
+setInterval(refreshBannedIPs, 5 * 60 * 1000);
 
 // ─── Settle view earnings for authors ────────────
 // For each story where views > lastSettledViews,
@@ -107,6 +118,12 @@ async function flushAndSettle() {
 
   // Now settle view earnings for authors
   await settleViewEarnings();
+
+  // Cleanup old ViewLog entries (older than 25 hours — keep buffer for dedup)
+  try {
+    const cutoff = new Date(Date.now() - 25 * 60 * 60 * 1000);
+    await prisma.viewLog.deleteMany({ where: { createdAt: { lt: cutoff } } });
+  } catch {}
 }
 
 // Flush every 5 minutes
@@ -172,20 +189,51 @@ router.get("/:slug", async (req: Request, res: Response) => {
     if (shouldCountView) {
       const rawIp = req.ip || req.headers["x-forwarded-for"] || "unknown";
       const viewerIp = typeof rawIp === "string" ? rawIp.split(",")[0].trim() : "unknown";
-      const viewKey = `${viewerIp}:${slug}`;
-      const lastViewed = viewedRecently.get(viewKey);
-      if (!lastViewed || Date.now() - lastViewed > VIEW_COOLDOWN) {
-        if (viewedRecently.size >= MAX_VIEW_MAP_SIZE) {
-          const oldest = viewedRecently.keys().next().value;
-          if (oldest) viewedRecently.delete(oldest);
+
+      // Skip banned IPs entirely
+      if (!bannedIPs.has(viewerIp) && viewerIp !== "unknown") {
+        const viewKey = `${viewerIp}:${slug}`;
+        const lastViewed = viewedRecently.get(viewKey);
+        const now = Date.now();
+
+        // Fast-path: in-memory cache says recently viewed → skip
+        if (!lastViewed || now - lastViewed > VIEW_COOLDOWN) {
+          // Persistent dedup: check ViewLog in DB (survives restarts)
+          const oneHourAgo = new Date(now - VIEW_COOLDOWN);
+          const recentDbView = await prisma.viewLog.findFirst({
+            where: { ip: viewerIp, storyId: story.id, createdAt: { gte: oneHourAgo } },
+            select: { id: true },
+          });
+
+          if (!recentDbView) {
+            // Daily cap: max N unique story views per IP per day
+            const todayStart = new Date();
+            todayStart.setHours(0, 0, 0, 0);
+            const dailyCount = await prisma.viewLog.count({
+              where: { ip: viewerIp, createdAt: { gte: todayStart } },
+            });
+
+            if (dailyCount < DAILY_VIEW_CAP_PER_IP) {
+              // Update in-memory cache
+              if (viewedRecently.size >= MAX_VIEW_MAP_SIZE) {
+                const oldest = viewedRecently.keys().next().value;
+                if (oldest) viewedRecently.delete(oldest);
+              }
+              viewedRecently.set(viewKey, now);
+
+              // Add to buffer
+              viewBuffer.set(story.id, (viewBuffer.get(story.id) || 0) + 1);
+
+              // Persist to ViewLog for dedup across restarts
+              prisma.viewLog.create({
+                data: { storyId: story.id, ip: viewerIp },
+              }).catch(() => {});
+            }
+          } else {
+            // DB says viewed recently → update in-memory cache to avoid future DB queries
+            viewedRecently.set(viewKey, now);
+          }
         }
-        viewedRecently.set(viewKey, Date.now());
-        // Add to buffer instead of direct DB write
-        viewBuffer.set(story.id, (viewBuffer.get(story.id) || 0) + 1);
-        // Also log to ViewLog for analytics
-        prisma.viewLog.create({
-          data: { storyId: story.id, ip: viewerIp },
-        }).catch(() => {});
       }
     }
 

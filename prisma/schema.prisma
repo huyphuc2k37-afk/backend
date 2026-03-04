@@ -514,6 +514,8 @@ model ViewLog {
 
   @@index([storyId])
   @@index([createdAt])
+  @@index([ip, storyId, createdAt]) // dedup: 1 view per IP per story per hour
+  @@index([ip, createdAt])          // daily cap check
 }
 
 // ─── Banned IPs (Anti-spam) ──────────────────────
