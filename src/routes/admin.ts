@@ -37,7 +37,7 @@ router.get("/stats", authRequired, adminRequired, async (_req: AuthRequest, res:
         prisma.withdrawal.count({ where: { status: "pending" } }),
       ]);
 
-    const [approvedDepositAmount, platformAgg, questAgg, viewEarningsAgg, adminCreditAgg, totalViewsAgg] = await Promise.all([
+    const [approvedDepositAmount, platformAgg, questAgg, viewEarningsAgg, adminCreditAgg, totalViewsAgg, xuInCirculation, totalAuthorEarningsAgg] = await Promise.all([
       prisma.deposit.aggregate({
         where: { status: "approved" },
         _sum: { amount: true },
@@ -62,6 +62,14 @@ router.get("/stats", authRequired, adminRequired, async (_req: AuthRequest, res:
       // Total views across all stories
       prisma.story.aggregate({
         _sum: { views: true },
+      }),
+      // Total xu currently in all user wallets
+      prisma.user.aggregate({
+        _sum: { coinBalance: true },
+      }),
+      // Total author earnings (all types: purchase, tip, view, admin)
+      prisma.authorEarning.aggregate({
+        _sum: { amount: true },
       }),
     ]);
 
@@ -92,6 +100,10 @@ router.get("/stats", authRequired, adminRequired, async (_req: AuthRequest, res:
       totalViewEarningsXu: viewEarningsAgg._sum.amount || 0,
       // Admin manual credits
       totalAdminCreditXu: adminCreditAgg._sum.amount || 0,
+      // Total author earnings (all types combined)
+      totalAuthorEarnings: totalAuthorEarningsAgg._sum.amount || 0,
+      // Total xu currently in user wallets
+      totalXuInCirculation: xuInCirculation._sum.coinBalance || 0,
       // Total views
       totalViews: totalViewsAgg._sum.views || 0,
     });
