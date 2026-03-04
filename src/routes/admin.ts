@@ -37,7 +37,7 @@ router.get("/stats", authRequired, adminRequired, async (_req: AuthRequest, res:
         prisma.withdrawal.count({ where: { status: "pending" } }),
       ]);
 
-    const [approvedDepositAmount, platformAgg, questAgg, viewEarningsAgg, totalViewsAgg] = await Promise.all([
+    const [approvedDepositAmount, platformAgg, questAgg, viewEarningsAgg, adminCreditAgg, totalViewsAgg] = await Promise.all([
       prisma.deposit.aggregate({
         where: { status: "approved" },
         _sum: { amount: true },
@@ -52,6 +52,11 @@ router.get("/stats", authRequired, adminRequired, async (_req: AuthRequest, res:
       // Total xu dispensed from view earnings (author earnings type "view")
       prisma.authorEarning.aggregate({
         where: { type: "view" },
+        _sum: { amount: true },
+      }),
+      // Total xu admin manually credited to authors
+      prisma.authorEarning.aggregate({
+        where: { type: "admin" },
         _sum: { amount: true },
       }),
       // Total views across all stories
@@ -85,6 +90,8 @@ router.get("/stats", authRequired, adminRequired, async (_req: AuthRequest, res:
       totalQuestXu: questAgg._sum.coinsEarned || 0,
       // View-based earnings
       totalViewEarningsXu: viewEarningsAgg._sum.amount || 0,
+      // Admin manual credits
+      totalAdminCreditXu: adminCreditAgg._sum.amount || 0,
       // Total views
       totalViews: totalViewsAgg._sum.views || 0,
     });
@@ -237,6 +244,19 @@ router.post("/users/:id/adjust-coins", authRequired, adminRequired, async (req: 
         });
       }
       throw txError;
+    }
+
+    // Record admin credit as AuthorEarning for audit trail
+    if (coins > 0) {
+      await prisma.authorEarning.create({
+        data: {
+          type: "admin",
+          amount: coins,
+          authorId: updated.id,
+          storyTitle: "Admin cộng xu",
+          chapterTitle: reason || "Không có lý do",
+        },
+      }).catch(() => {});
     }
 
     // Gửi thông báo cho user
