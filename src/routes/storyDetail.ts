@@ -4,6 +4,17 @@ import { cached, SHORT_TTL, invalidateCache } from "../lib/cache";
 
 const router = Router();
 
+/** Derive a direct cover URL from a Story record */
+function deriveCoverUrl(story: { coverImage?: string | null; coverApprovalStatus?: string; approvalStatus?: string }): string | null {
+  if (!story.coverImage) return null;
+  if (story.coverApprovalStatus === "rejected") return null;
+  if (story.approvalStatus !== "approved" && story.coverApprovalStatus !== "approved") return null;
+  if (story.coverImage.startsWith("http://") || story.coverImage.startsWith("https://")) {
+    return story.coverImage;
+  }
+  return null;
+}
+
 // ─── View Earning Config ─────────────────────────
 const XU_PER_VIEW = 2; // xu tác giả nhận cho mỗi unique view
 
@@ -157,6 +168,8 @@ router.get("/:slug", async (req: Request, res: Response) => {
           ratingCount: true,
           isAdult: true,
           approvalStatus: true,
+          coverImage: true,
+          coverApprovalStatus: true,
           createdAt: true,
           updatedAt: true,
           author: { select: { id: true, name: true, image: true, bio: true } },
@@ -238,9 +251,10 @@ router.get("/:slug", async (req: Request, res: Response) => {
     }
 
     // Flatten storyTags for cleaner response
-    const { storyTags, ...rest } = story;
+    const { storyTags, coverImage, coverApprovalStatus, ...rest } = story;
     res.json({
       ...rest,
+      coverUrl: deriveCoverUrl(story),
       storyTagList: storyTags?.map((st: any) => st.tag) ?? [],
     });
   } catch (error) {

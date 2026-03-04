@@ -5,6 +5,20 @@ import { cached, SHORT_TTL } from "../lib/cache";
 
 const router = Router();
 
+/** Derive a direct cover URL from a Story record (null if none or rejected) */
+function deriveCoverUrl(story: { coverImage?: string | null; coverApprovalStatus?: string; approvalStatus?: string }): string | null {
+  if (!story.coverImage) return null;
+  // Block rejected covers
+  if (story.coverApprovalStatus === "rejected") return null;
+  // For non-approved stories, cover must be explicitly approved
+  if (story.approvalStatus !== "approved" && story.coverApprovalStatus !== "approved") return null;
+  // Only expose direct URL for cloud-stored covers
+  if (story.coverImage.startsWith("http://") || story.coverImage.startsWith("https://")) {
+    return story.coverImage;
+  }
+  return null; // base64 covers still go through /cover endpoint
+}
+
 // GET /api/stories — list stories with optional filters
 router.get("/", async (req: Request, res: Response) => {
   try {
@@ -88,6 +102,9 @@ router.get("/", async (req: Request, res: Response) => {
             isAdult: true,
             createdAt: true,
             updatedAt: true,
+            coverImage: true,
+            coverApprovalStatus: true,
+            approvalStatus: true,
             author: { select: { id: true, name: true, image: true } },
             category: { select: { name: true, slug: true } },
             _count: { select: { chapters: true, bookmarks: true } },
@@ -100,11 +117,14 @@ router.get("/", async (req: Request, res: Response) => {
       ]);
 
       return {
-        stories: stories.map((s) => ({
-          ...s,
-          storyTagList: s.storyTags.map((st) => st.tag),
-          storyTags: undefined,
-        })),
+        stories: stories.map((s) => {
+          const { storyTags, coverImage, coverApprovalStatus, approvalStatus, ...rest } = s;
+          return {
+            ...rest,
+            coverUrl: deriveCoverUrl(s),
+            storyTagList: storyTags.map((st) => st.tag),
+          };
+        }),
         pagination: {
           page: pageNum,
           limit: limitNum,
