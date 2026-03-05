@@ -260,6 +260,12 @@ router.post("/purchase", authRequired, async (req: AuthRequest, res: Response) =
     // Use interactive transaction with balance guard to prevent race condition
     try {
       await prisma.$transaction(async (tx) => {
+        // Re-check inside transaction to prevent duplicate purchase race condition
+        const existingPurchase = await tx.chapterPurchase.findUnique({
+          where: { userId_chapterId: { userId: user.id, chapterId } },
+        });
+        if (existingPurchase) throw new Error("ALREADY_PURCHASED");
+
         const freshUser = await tx.user.findUnique({ where: { id: user.id }, select: { coinBalance: true } });
         if (!freshUser || freshUser.coinBalance < chapter.price) {
           throw new Error("INSUFFICIENT_BALANCE");
@@ -297,6 +303,9 @@ router.post("/purchase", authRequired, async (req: AuthRequest, res: Response) =
         });
       });
     } catch (txError: any) {
+      if (txError.message === "ALREADY_PURCHASED") {
+        return res.status(400).json({ error: "Already purchased" });
+      }
       if (txError.message === "INSUFFICIENT_BALANCE") {
         return res.status(400).json({ error: "Insufficient balance", required: chapter.price, balance: user.coinBalance });
       }

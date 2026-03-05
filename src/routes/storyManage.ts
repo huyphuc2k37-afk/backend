@@ -153,7 +153,7 @@ router.post("/stories", authRequired, async (req: AuthRequest, res: Response) =>
 
     const { title, slug, description, coverImage, genre, tags, categoryId, tagIds, theme, expectedChapters, worldBuilding, characters, plotOutline, targetAudience, postSchedule, isAdult } = req.body;
 
-    if (!title || !slug || !description || !genre) {
+    if (!title?.trim() || !slug?.trim() || !description?.trim() || !genre?.trim()) {
       return res.status(400).json({ error: "Thiếu thông tin bắt buộc: tên, slug, mô tả, thể loại" });
     }
 
