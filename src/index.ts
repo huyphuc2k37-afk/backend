@@ -134,7 +134,7 @@ app.use(
   })
 );
 app.use(compression());
-app.use(express.json({ limit: "200kb" }));
+app.use(express.json({ limit: "5mb" }));
 
 // ─── Rate Limiting ───────────────────────────────
 // General: 200 requests per minute per IP
@@ -220,9 +220,12 @@ app.use((_req, res) => {
 });
 
 // ─── Global error handler ────────────────────────
-app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+app.use((err: Error & { type?: string; status?: number }, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   if (err.message?.startsWith("CORS blocked")) {
     return res.status(403).json({ error: "Origin not allowed" });
+  }
+  if (err.type === "entity.too.large") {
+    return res.status(413).json({ error: "Dữ liệu quá lớn. Vui lòng giảm kích thước ảnh bìa" });
   }
   // Report to Sentry
   if (process.env.SENTRY_DSN) {
