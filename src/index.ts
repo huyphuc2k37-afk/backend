@@ -134,6 +134,10 @@ app.use(
   })
 );
 app.use(compression());
+
+// ─── Track last request time for keep-alive ──────
+let lastRequestTime = Date.now();
+app.use((_req, _res, next) => { lastRequestTime = Date.now(); next(); });
 app.use(express.json({ limit: "5mb" }));
 
 // ─── Rate Limiting ───────────────────────────────
@@ -241,12 +245,14 @@ const server = app.listen(PORT, "0.0.0.0", () => {
   console.log(`📖 API docs: http://localhost:${PORT}/api/health`);
   startTelegramPolling();
 
-  // ─── Self-ping to prevent Render free tier sleep ──
+  // ─── Self-ping only when idle (no traffic in 14 min) ──
   const RENDER_URL = process.env.RENDER_EXTERNAL_URL;
   if (RENDER_URL) {
     setInterval(() => {
-      fetch(`${RENDER_URL}/api/health`).catch(() => {});
-    }, 14 * 60 * 1000); // every 14 minutes
+      if (Date.now() - lastRequestTime > 13 * 60 * 1000) {
+        fetch(`${RENDER_URL}/api/health`).catch(() => {});
+      }
+    }, 60 * 1000); // check every minute
   }
 });
 
