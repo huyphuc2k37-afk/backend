@@ -240,6 +240,14 @@ const server = app.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 VStory Backend running at http://0.0.0.0:${PORT}`);
   console.log(`📖 API docs: http://localhost:${PORT}/api/health`);
   startTelegramPolling();
+
+  // ─── Self-ping to prevent Render free tier sleep ──
+  const RENDER_URL = process.env.RENDER_EXTERNAL_URL;
+  if (RENDER_URL) {
+    setInterval(() => {
+      fetch(`${RENDER_URL}/api/health`).catch(() => {});
+    }, 14 * 60 * 1000); // every 14 minutes
+  }
 });
 
 // ─── Graceful shutdown ───────────────────────────
