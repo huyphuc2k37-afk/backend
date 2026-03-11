@@ -17,7 +17,7 @@ const QUEST_REWARDS = {
   comment: 10,
   read: 20,
 };
-const MAX_DAILY = 100;
+const MAX_DAILY = QUEST_REWARDS.checkin + QUEST_REWARDS.comment + QUEST_REWARDS.read;
 
 async function getOrCreateDailyQuest(userId: string, date: string) {
   return prisma.dailyQuest.upsert({
