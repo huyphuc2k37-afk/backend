@@ -16,10 +16,7 @@ const QUEST_REWARDS = {
   checkin: 20,
   comment: 10,
   read: 20,
-  watchAd: 10, // 10 xu per ad, up to 5 ads/day = 50 xu
 };
-const AD_WATCH_MAX = 5; // Maximum ads per day
-const AD_COOLDOWN_SECONDS = 15; // Must watch ad for at least 15 seconds
 const MAX_DAILY = 100;
 
 async function getOrCreateDailyQuest(userId: string, date: string) {
@@ -64,15 +61,6 @@ router.get("/daily", authRequired, async (req: AuthRequest, res: Response) => {
           completed: quest.readCompleted,
           progress: Math.min(quest.readMinutes, 10),
           target: 10,
-        },
-        {
-          id: "watchAd",
-          title: "Xem quảng cáo nhận xu",
-          description: `Xem quảng cáo để nhận ${QUEST_REWARDS.watchAd} xu mỗi lần`,
-          reward: QUEST_REWARDS.watchAd,
-          completed: quest.adsWatched >= AD_WATCH_MAX,
-          progress: quest.adsWatched,
-          target: AD_WATCH_MAX,
         },
       ],
       coinsEarned: quest.coinsEarned,
@@ -234,99 +222,6 @@ router.post("/complete-comment", authRequired, async (req: AuthRequest, res: Res
     });
   } catch (error) {
     console.error("Error completing comment quest:", error);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-// ── POST /api/quests/watch-ad — Reward user for watching an ad ──
-// Server validates minimum watch time to prevent abuse
-const adWatchTimestamps = new Map<string, number>(); // userId -> timestamp when ad was started
-
-router.post("/watch-ad/start", authRequired, async (req: AuthRequest, res: Response) => {
-  try {
-    const user = await prisma.user.findUnique({ where: { email: req.user!.email } });
-    if (!user) return res.status(404).json({ error: "User not found" });
-
-    const date = todayStr();
-    const quest = await getOrCreateDailyQuest(user.id, date);
-
-    if (quest.adsWatched >= AD_WATCH_MAX) {
-      return res.status(400).json({ error: "Đã xem đủ quảng cáo hôm nay" });
-    }
-
-    // Store start timestamp for validation
-    adWatchTimestamps.set(user.id, Date.now());
-
-    res.json({
-      success: true,
-      cooldownSeconds: AD_COOLDOWN_SECONDS,
-      adsWatched: quest.adsWatched,
-      adsMax: AD_WATCH_MAX,
-    });
-  } catch (error) {
-    console.error("Error starting ad watch:", error);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-router.post("/watch-ad/complete", authRequired, async (req: AuthRequest, res: Response) => {
-  try {
-    const user = await prisma.user.findUnique({ where: { email: req.user!.email } });
-    if (!user) return res.status(404).json({ error: "User not found" });
-
-    // Validate that user actually started watching
-    const startTime = adWatchTimestamps.get(user.id);
-    if (!startTime) {
-      return res.status(400).json({ error: "Phiên xem quảng cáo không hợp lệ" });
-    }
-
-    // Validate minimum watch time (allow 2s tolerance for network latency)
-    const elapsed = (Date.now() - startTime) / 1000;
-    if (elapsed < AD_COOLDOWN_SECONDS - 2) {
-      return res.status(400).json({ error: "Chưa xem đủ thời gian quảng cáo" });
-    }
-
-    // Clean up
-    adWatchTimestamps.delete(user.id);
-
-    const date = todayStr();
-    const quest = await getOrCreateDailyQuest(user.id, date);
-
-    if (quest.adsWatched >= AD_WATCH_MAX) {
-      return res.status(400).json({ error: "Đã xem đủ quảng cáo hôm nay" });
-    }
-
-    if (quest.coinsEarned + QUEST_REWARDS.watchAd > MAX_DAILY) {
-      return res.status(400).json({ error: "Đã đạt giới hạn xu nhiệm vụ hôm nay" });
-    }
-
-    const newAdsWatched = quest.adsWatched + 1;
-
-    const [updatedQuest] = await prisma.$transaction([
-      prisma.dailyQuest.update({
-        where: { userId_date: { userId: user.id, date } },
-        data: {
-          adsWatched: newAdsWatched,
-          coinsEarned: { increment: QUEST_REWARDS.watchAd },
-        },
-      }),
-      prisma.user.update({
-        where: { id: user.id },
-        data: { coinBalance: { increment: QUEST_REWARDS.watchAd } },
-      }),
-    ]);
-
-    res.json({
-      success: true,
-      reward: QUEST_REWARDS.watchAd,
-      adsWatched: newAdsWatched,
-      adsMax: AD_WATCH_MAX,
-      completed: newAdsWatched >= AD_WATCH_MAX,
-      coinsEarned: updatedQuest.coinsEarned,
-      message: `Xem quảng cáo thành công! +${QUEST_REWARDS.watchAd} xu (${newAdsWatched}/${AD_WATCH_MAX})`,
-    });
-  } catch (error) {
-    console.error("Error completing ad watch:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });
