@@ -7,6 +7,17 @@ import { uploadCoverImage, isStorageEnabled } from "../lib/supabaseStorage";
 
 const router = Router();
 
+// ─── Helper: resolve reviewer names from user IDs ──
+async function resolveReviewerNames(ids: (string | null | undefined)[]): Promise<Record<string, string>> {
+  const uniqueIds = [...new Set(ids.filter((id): id is string => !!id))];
+  if (uniqueIds.length === 0) return {};
+  const users = await prisma.user.findMany({
+    where: { id: { in: uniqueIds } },
+    select: { id: true, name: true },
+  });
+  return Object.fromEntries(users.map((u) => [u.id, u.name]));
+}
+
 // ─── Moderator middleware ────────────────────────
 async function modRequired(req: AuthRequest, res: Response, next: NextFunction) {
   const user = await prisma.user.findUnique({
@@ -88,7 +99,14 @@ router.get("/stories", authRequired, modRequired, async (req: AuthRequest, res: 
       prisma.story.count({ where }),
     ]);
 
-    res.json({ stories, total, page, totalPages: Math.ceil(total / limit) });
+    // Resolve reviewer names
+    const reviewerMap = await resolveReviewerNames(stories.map((s) => s.reviewedBy));
+    const storiesWithReviewer = stories.map((s) => ({
+      ...s,
+      reviewerName: s.reviewedBy ? reviewerMap[s.reviewedBy] || null : null,
+    }));
+
+    res.json({ stories: storiesWithReviewer, total, page, totalPages: Math.ceil(total / limit) });
   } catch (error) {
     console.error("Error fetching mod stories:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -119,7 +137,7 @@ router.get("/stories/:id", authRequired, modRequired, async (req: AuthRequest, r
         updatedAt: true,
         author: { select: { id: true, name: true, email: true, image: true } },
         chapters: {
-          select: { id: true, title: true, number: true, wordCount: true, approvalStatus: true, createdAt: true },
+          select: { id: true, title: true, number: true, wordCount: true, approvalStatus: true, reviewedBy: true, reviewedAt: true, createdAt: true },
           orderBy: { number: "asc" },
         },
         _count: { select: { chapters: true, bookmarks: true, comments: true } },
@@ -127,7 +145,19 @@ router.get("/stories/:id", authRequired, modRequired, async (req: AuthRequest, r
     });
 
     if (!story) return res.status(404).json({ error: "Story not found" });
-    res.json(story);
+
+    // Resolve reviewer name + chapter reviewer names
+    const allReviewerIds = [story.reviewedBy, ...story.chapters.map((c: any) => c.reviewedBy).filter(Boolean)];
+    const reviewerMap = await resolveReviewerNames(allReviewerIds);
+
+    res.json({
+      ...story,
+      reviewerName: story.reviewedBy ? reviewerMap[story.reviewedBy] || null : null,
+      chapters: story.chapters.map((c: any) => ({
+        ...c,
+        reviewerName: c.reviewedBy ? reviewerMap[c.reviewedBy] || null : null,
+      })),
+    });
   } catch (error) {
     console.error("Error fetching story detail:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -279,6 +309,7 @@ router.get("/chapters", authRequired, modRequired, async (req: AuthRequest, res:
           wordCount: true,
           approvalStatus: true,
           rejectionReason: true,
+          reviewedBy: true,
           reviewedAt: true,
           createdAt: true,
           story: {
@@ -294,7 +325,14 @@ router.get("/chapters", authRequired, modRequired, async (req: AuthRequest, res:
       prisma.chapter.count({ where }),
     ]);
 
-    res.json({ chapters, total, page, totalPages: Math.ceil(total / limit) });
+    // Resolve reviewer names
+    const reviewerMap = await resolveReviewerNames(chapters.map((c) => c.reviewedBy));
+    const chaptersWithReviewer = chapters.map((c) => ({
+      ...c,
+      reviewerName: c.reviewedBy ? reviewerMap[c.reviewedBy] || null : null,
+    }));
+
+    res.json({ chapters: chaptersWithReviewer, total, page, totalPages: Math.ceil(total / limit) });
   } catch (error) {
     console.error("Error fetching mod chapters:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -320,7 +358,13 @@ router.get("/chapters/:id", authRequired, modRequired, async (req: AuthRequest, 
     });
 
     if (!chapter) return res.status(404).json({ error: "Chapter not found" });
-    res.json(chapter);
+
+    // Resolve reviewer name
+    const reviewerMap = await resolveReviewerNames([chapter.reviewedBy]);
+    res.json({
+      ...chapter,
+      reviewerName: chapter.reviewedBy ? reviewerMap[chapter.reviewedBy] || null : null,
+    });
   } catch (error) {
     console.error("Error fetching chapter detail:", error);
     res.status(500).json({ error: "Internal server error" });

@@ -179,7 +179,7 @@ router.get("/:slug", async (req: Request, res: Response) => {
           },
           chapters: {
             where: { approvalStatus: "approved" },
-            select: { id: true, title: true, number: true, wordCount: true, isLocked: true, price: true, createdAt: true },
+            select: { id: true, title: true, number: true, wordCount: true, isLocked: true, price: true, createdAt: true, updatedAt: true },
             orderBy: { number: "asc" },
           },
           _count: { select: { bookmarks: true, comments: true, storyLikes: true } },

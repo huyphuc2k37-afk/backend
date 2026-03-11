@@ -81,7 +81,7 @@ router.get("/:id", authOptional, async (req: AuthRequest, res: Response) => {
     // Get user from DB
     const user = await prisma.user.findUnique({
       where: { email: req.user.email },
-      select: { id: true },
+      select: { id: true, role: true },
     });
     if (!user) {
       return res.json({ ...chapter, content: "", prev, next, requiresLogin: true });
@@ -89,6 +89,11 @@ router.get("/:id", authOptional, async (req: AuthRequest, res: Response) => {
 
     // Author can always read their own chapters
     if (user.id === chapter.story.authorId) {
+      return res.json({ ...chapter, prev, next });
+    }
+
+    // Admin and moderators can read all chapters without purchasing
+    if (user.role === "admin" || user.role === "moderator") {
       return res.json({ ...chapter, prev, next });
     }
 
