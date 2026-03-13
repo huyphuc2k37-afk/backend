@@ -45,12 +45,8 @@ router.get("/", async (req: Request, res: Response) => {
     if (tagSlugs) {
       const slugs = (tagSlugs as string).split(",").map((t) => t.trim()).filter(Boolean).slice(0, 10);
       if (slugs.length > 0) {
-        // When genre filter already added an OR with storyTags, we need AND for tag filter
-        if (where.storyTags) {
-          where.AND = [...(where.AND || []), { storyTags: { some: { tag: { slug: { in: slugs } } } } }];
-        } else {
-          where.storyTags = { some: { tag: { slug: { in: slugs } } } };
-        }
+        // Always use AND to safely combine with any existing filters (genre OR, etc.)
+        where.AND = [...(where.AND || []), { storyTags: { some: { tag: { slug: { in: slugs } } } } }];
       }
     }
     if (status) where.status = status as string;
