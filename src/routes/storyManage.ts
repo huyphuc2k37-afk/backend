@@ -374,10 +374,10 @@ router.post("/stories/:storyId/chapters", authRequired, async (req: AuthRequest,
     });
     const nextNumber = (lastChapter?.number || 0) + 1;
 
-    // Validate lock rules: first 10 chapters must be free (by number), price 100-5000
+    // Validate lock rules: first 20 chapters must be free (by number), price 100-5000
     let finalIsLocked = isLocked || false;
     let finalPrice = price || 0;
-    if (nextNumber <= 10) {
+    if (nextNumber <= 20) {
       finalIsLocked = false;
       finalPrice = 0;
     } else if (finalIsLocked) {
@@ -461,10 +461,10 @@ router.post("/stories/:storyId/chapters/bulk", authRequired, async (req: AuthReq
       const num = nextNumber + i;
       const wordCount = ch.content.replace(/<[^>]*>/g, "").split(/\s+/).filter(Boolean).length;
 
-      // First 10 chapters must be free
+      // First 20 chapters must be free
       let finalIsLocked = ch.isLocked || false;
       let finalPrice = ch.price || 0;
-      if (num <= 10) {
+      if (num <= 20) {
         finalIsLocked = false;
         finalPrice = 0;
       } else if (finalIsLocked) {
@@ -553,10 +553,10 @@ router.put("/chapters/:id", authRequired, async (req: AuthRequest, res: Response
     }
     if (authorNote !== undefined) data.authorNote = authorNote;
 
-    // Validate lock rules: first 10 chapters must be free, price 100-5000
+    // Validate lock rules: first 20 chapters must be free, price 100-5000
     if (isLocked !== undefined) {
-      if (isLocked && chapter.number <= 10) {
-        return res.status(400).json({ error: "10 chương đầu tiên phải miễn phí" });
+      if (isLocked && chapter.number <= 20) {
+        return res.status(400).json({ error: "20 chương đầu tiên phải miễn phí" });
       }
       data.isLocked = isLocked;
     }
