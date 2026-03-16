@@ -1,6 +1,7 @@
 import { Router, Response, NextFunction } from "express";
 import prisma from "../lib/prisma";
 import { AuthRequest, authRequired } from "../middleware/auth";
+import { invalidateCache } from "../lib/cache";
 
 const router = Router();
 
@@ -449,6 +450,8 @@ router.put("/stories/:id/featured-slot", authRequired, adminRequired, async (req
         },
       });
     });
+
+    invalidateCache("stories:*");
 
     return res.json({
       success: true,

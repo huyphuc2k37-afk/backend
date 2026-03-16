@@ -86,6 +86,8 @@ router.get("/stories", authRequired, modRequired, async (req: AuthRequest, res: 
           status: true,
           isAdult: true,
           views: true,
+          coverImage: true,
+          coverApprovalStatus: true,
           approvalStatus: true,
           rejectionReason: true,
           reviewedBy: true,
@@ -101,10 +103,14 @@ router.get("/stories", authRequired, modRequired, async (req: AuthRequest, res: 
 
     // Resolve reviewer names
     const reviewerMap = await resolveReviewerNames(stories.map((s) => s.reviewedBy));
-    const storiesWithReviewer = stories.map((s) => ({
-      ...s,
-      reviewerName: s.reviewedBy ? reviewerMap[s.reviewedBy] || null : null,
-    }));
+    const storiesWithReviewer = stories.map((s) => {
+      const { coverImage, ...storyWithoutCoverImage } = s;
+      return {
+        ...storyWithoutCoverImage,
+        hasCover: Boolean(coverImage?.trim()),
+        reviewerName: s.reviewedBy ? reviewerMap[s.reviewedBy] || null : null,
+      };
+    });
 
     res.json({ stories: storiesWithReviewer, total, page, totalPages: Math.ceil(total / limit) });
   } catch (error) {
@@ -124,6 +130,8 @@ router.get("/stories/:id", authRequired, modRequired, async (req: AuthRequest, r
         slug: true,
         description: true,
         coverImage: true,
+        coverApprovalStatus: true,
+        coverRejectionReason: true,
         genre: true,
         tags: true,
         status: true,
@@ -152,6 +160,7 @@ router.get("/stories/:id", authRequired, modRequired, async (req: AuthRequest, r
 
     res.json({
       ...story,
+      hasCover: Boolean(story.coverImage?.trim()),
       reviewerName: story.reviewedBy ? reviewerMap[story.reviewedBy] || null : null,
       chapters: story.chapters.map((c: any) => ({
         ...c,
@@ -170,6 +179,10 @@ router.put("/stories/:id/approve", authRequired, modRequired, async (req: AuthRe
     const modUser = (req as any).modUser;
     const story = await prisma.story.findUnique({ where: { id: req.params.id } });
     if (!story) return res.status(404).json({ error: "Story not found" });
+
+    if (!story.coverImage || !story.coverImage.trim()) {
+      return res.status(400).json({ error: "Không thể duyệt truyện khi chưa có ảnh bìa" });
+    }
 
     // Prevent self-moderation
     if (story.authorId === modUser.id) {
