@@ -27,9 +27,11 @@ router.get("/", async (req: Request, res: Response) => {
       status, search, sort = "updatedAt",
       page = "1", limit = "20",
       is_paid, is_adult,
+      featured,
     } = req.query;
 
     const where: any = { approvalStatus: "approved" };
+    if (featured === "true") where.featuredSlot = { not: null };
     if (genre) {
       // Match stories where the genre field contains the name (exact or as part of comma-separated list)
       // OR there's a matching StoryTag (type=genre) with that name.
@@ -68,15 +70,18 @@ router.get("/", async (req: Request, res: Response) => {
       }
     }
 
-    const orderBy: any = {};
-    if (sort === "views") orderBy.views = "desc";
-    else if (sort === "likes" || sort === "popular") orderBy.likes = "desc";
-    else if (sort === "new") orderBy.createdAt = "desc";
-    else orderBy.updatedAt = "desc";
+    const orderBy: any[] = [];
+    if (featured === "true") {
+      orderBy.push({ featuredSlot: "asc" });
+    }
+    if (sort === "views") orderBy.push({ views: "desc" });
+    else if (sort === "likes" || sort === "popular") orderBy.push({ likes: "desc" });
+    else if (sort === "new") orderBy.push({ createdAt: "desc" });
+    else orderBy.push({ updatedAt: "desc" });
 
     const pageNum = Math.max(1, parseInt(page as string) || 1);
     const limitNum = Math.min(100, Math.max(1, parseInt(limit as string) || 20));
-    const cacheKey = `stories:${genre || ""}:${category || ""}:${tagSlugs || ""}:${status || ""}:${search || ""}:${sort}:${pageNum}:${limitNum}:${is_paid || ""}:${is_adult || ""}`;
+    const cacheKey = `stories:${genre || ""}:${category || ""}:${tagSlugs || ""}:${status || ""}:${search || ""}:${sort}:${pageNum}:${limitNum}:${is_paid || ""}:${is_adult || ""}:${featured || ""}`;
 
     const result = await cached(cacheKey, SHORT_TTL, async () => {
       const [stories, total] = await Promise.all([
@@ -90,6 +95,7 @@ router.get("/", async (req: Request, res: Response) => {
             title: true,
             slug: true,
             description: true,
+            featuredSlot: true,
             genre: true,
             tags: true,
             status: true,

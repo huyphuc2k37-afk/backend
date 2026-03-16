@@ -380,6 +380,7 @@ router.get("/stories", authRequired, adminRequired, async (req: AuthRequest, res
           id: true,
           title: true,
           slug: true,
+          featuredSlot: true,
           genre: true,
           status: true,
           views: true,
@@ -402,6 +403,63 @@ router.get("/stories", authRequired, adminRequired, async (req: AuthRequest, res
   } catch (error) {
     console.error("Error fetching stories:", error);
     res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ─── PUT /api/admin/stories/:id/featured-slot — ghim truyện đầu trang ──
+router.put("/stories/:id/featured-slot", authRequired, adminRequired, async (req: AuthRequest, res: Response) => {
+  try {
+    const rawSlot = req.body?.featuredSlot;
+    const featuredSlot = rawSlot === null || rawSlot === undefined || rawSlot === ""
+      ? null
+      : Number(rawSlot);
+
+    if (featuredSlot !== null && (!Number.isInteger(featuredSlot) || featuredSlot < 1 || featuredSlot > 5)) {
+      return res.status(400).json({ error: "featuredSlot phải là số từ 1 đến 5 hoặc null" });
+    }
+
+    const storyId = req.params.id;
+    const targetStory = await prisma.story.findUnique({
+      where: { id: storyId },
+      select: { id: true, title: true, featuredSlot: true },
+    });
+
+    if (!targetStory) {
+      return res.status(404).json({ error: "Story not found" });
+    }
+
+    const updatedStory = await prisma.$transaction(async (tx) => {
+      if (featuredSlot !== null) {
+        await tx.story.updateMany({
+          where: {
+            featuredSlot,
+            NOT: { id: storyId },
+          },
+          data: { featuredSlot: null },
+        });
+      }
+
+      return tx.story.update({
+        where: { id: storyId },
+        data: { featuredSlot },
+        select: {
+          id: true,
+          title: true,
+          featuredSlot: true,
+        },
+      });
+    });
+
+    return res.json({
+      success: true,
+      story: updatedStory,
+      message: featuredSlot === null
+        ? `Đã gỡ truyện \"${targetStory.title}\" khỏi khu nổi bật`
+        : `Đã ghim truyện \"${targetStory.title}\" vào vị trí ${featuredSlot}`,
+    });
+  } catch (error) {
+    console.error("Error updating featured slot:", error);
+    return res.status(500).json({ error: "Internal server error" });
   }
 });
 

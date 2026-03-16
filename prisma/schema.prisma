@@ -174,6 +174,7 @@ model Story {
   slug            String    @unique
   description     String    @db.Text
   coverImage      String?
+  featuredSlot    Int?      @unique
   genre           String    // legacy: Tiên hiệp, Kiếm hiệp, etc. (kept for backward compat)
   status          String    @default("ongoing") // ongoing | completed | paused
   approvalStatus  String    @default("pending") // pending | approved | rejected
@@ -222,6 +223,7 @@ model Story {
   @@index([views])
   @@index([likes])
   @@index([genre])
+  @@index([featuredSlot])
   @@index([categoryId])
   @@index([updatedAt])
   @@index([status])
