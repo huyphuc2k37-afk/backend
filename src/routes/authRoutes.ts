@@ -73,6 +73,11 @@ router.post("/register", async (req: Request, res: Response) => {
       return res.status(400).json({ error: "Email không hợp lệ" });
     }
 
+    // Only allow @gmail.com registration
+    if (!email.endsWith("@gmail.com")) {
+      return res.status(400).json({ error: "Chỉ chấp nhận đăng ký bằng email @gmail.com. Vui lòng dùng nút Đăng nhập với Google." });
+    }
+
     if (password.length < 6 || password.trim().length < 6) {
       return res.status(400).json({ error: "Mật khẩu phải có ít nhất 6 ký tự (không tính khoảng trắng)" });
     }
@@ -303,6 +308,11 @@ router.post("/sync", async (req: Request, res: Response) => {
     const bannedEmail = await prisma.bannedEmail.findUnique({ where: { email } });
     if (bannedEmail) {
       return res.status(403).json({ error: "Email này đã bị chặn." });
+    }
+
+    // Only allow @gmail.com for Google OAuth sync
+    if (!email.endsWith("@gmail.com")) {
+      return res.status(403).json({ error: "Chỉ chấp nhận tài khoản Google có email @gmail.com." });
     }
 
     let user = await prisma.user.findUnique({ where: { email } });
