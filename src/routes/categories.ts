@@ -53,12 +53,13 @@ router.get("/:slug", async (req: Request, res: Response) => {
       status,
       is_paid,
       is_adult,
+      story_origin,
     } = req.query;
 
     const pageNum = Math.max(1, parseInt(page as string) || 1);
     const pageSizeNum = Math.min(60, Math.max(1, parseInt(pageSize as string) || 20));
 
-    const cacheKey = `cat:${slug}:${page}:${pageSize}:${sort}:${tags || ""}:${status || ""}:${is_paid || ""}:${is_adult || ""}`;
+    const cacheKey = `cat:${slug}:${page}:${pageSize}:${sort}:${tags || ""}:${status || ""}:${is_paid || ""}:${is_adult || ""}:${story_origin || ""}`;
 
     const result = await cached(cacheKey, SHORT_TTL, async () => {
       // Find category
@@ -86,6 +87,9 @@ router.get("/:slug", async (req: Request, res: Response) => {
 
       if (status && ["ongoing", "completed", "paused"].includes(status as string)) {
         where.status = status as string;
+      }
+      if (story_origin === "original" || story_origin === "translated") {
+        where.storyOrigin = story_origin;
       }
       if (is_paid === "true") where.chapters = { some: { isLocked: true } };
       if (is_paid === "false") where.chapters = { none: { isLocked: true } };
@@ -133,6 +137,11 @@ router.get("/:slug", async (req: Request, res: Response) => {
             slug: true,
             description: true,
             genre: true,
+            storyOrigin: true,
+            originalTitle: true,
+            originalAuthor: true,
+            originalLanguage: true,
+            translatorName: true,
             status: true,
             views: true,
             likes: true,

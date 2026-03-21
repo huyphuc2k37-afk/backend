@@ -6,6 +6,7 @@ import { uploadCoverImage, deleteCoverImages, isStorageEnabled } from "../lib/su
 import { invalidateCache } from "../lib/cache";
 
 const router = Router();
+const STORY_ORIGINS = new Set(["original", "translated"]);
 
 function sanitizeStoryTags(tags: unknown): string | null | undefined {
   if (tags === undefined) return undefined;
@@ -18,6 +19,58 @@ function sanitizeStoryTags(tags: unknown): string | null | undefined {
     .filter(Boolean);
 
   return cleaned.length > 0 ? cleaned.join(",") : null;
+}
+
+function normalizeStoryOrigin(value: unknown): "original" | "translated" {
+  return typeof value === "string" && STORY_ORIGINS.has(value) ? (value as "original" | "translated") : "original";
+}
+
+function normalizeOptionalText(value: unknown, maxLength = 255): string | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  return trimmed.slice(0, maxLength);
+}
+
+function normalizeOptionalUrl(value: unknown): string | null | undefined {
+  const normalized = normalizeOptionalText(value, 2048);
+  if (normalized === undefined || normalized === null) return normalized;
+  try {
+    const parsed = new URL(normalized);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
+function buildTranslatedStoryFields(input: Record<string, unknown>) {
+  const storyOrigin = normalizeStoryOrigin(input.storyOrigin);
+  if (storyOrigin === "translated") {
+    return {
+      storyOrigin,
+      originalTitle: normalizeOptionalText(input.originalTitle),
+      originalAuthor: normalizeOptionalText(input.originalAuthor),
+      originalLanguage: normalizeOptionalText(input.originalLanguage, 100),
+      translatorName: normalizeOptionalText(input.translatorName),
+      translationGroup: normalizeOptionalText(input.translationGroup),
+      sourceName: normalizeOptionalText(input.sourceName),
+      sourceUrl: normalizeOptionalUrl(input.sourceUrl),
+    };
+  }
+
+  return {
+    storyOrigin,
+    originalTitle: null,
+    originalAuthor: null,
+    originalLanguage: null,
+    translatorName: null,
+    translationGroup: null,
+    sourceName: null,
+    sourceUrl: null,
+  };
 }
 
 /**
@@ -70,6 +123,7 @@ router.get("/stories", authRequired, async (req: AuthRequest, res: Response) => 
         title: true,
         slug: true,
         genre: true,
+        storyOrigin: true,
         status: true,
         views: true,
         likes: true,
@@ -107,6 +161,14 @@ router.get("/stories/:id", authRequired, async (req: AuthRequest, res: Response)
         coverImage: true,
         genre: true,
         tags: true,
+        storyOrigin: true,
+        originalTitle: true,
+        originalAuthor: true,
+        originalLanguage: true,
+        translatorName: true,
+        translationGroup: true,
+        sourceName: true,
+        sourceUrl: true,
         categoryId: true,
         status: true,
         views: true,
@@ -152,9 +214,16 @@ router.post("/stories", authRequired, async (req: AuthRequest, res: Response) =>
     }
 
     const { title, slug, description, coverImage, genre, tags, categoryId, tagIds, theme, expectedChapters, worldBuilding, characters, plotOutline, targetAudience, postSchedule, isAdult } = req.body;
+    const translatedFields = buildTranslatedStoryFields(req.body);
 
     if (!title?.trim() || !slug?.trim() || !description?.trim() || !genre?.trim()) {
       return res.status(400).json({ error: "Thiếu thông tin bắt buộc: tên, slug, mô tả, thể loại" });
+    }
+    if (translatedFields.storyOrigin === "translated" && !translatedFields.originalTitle) {
+      return res.status(400).json({ error: "Truyện dịch cần có tên gốc" });
+    }
+    if (translatedFields.storyOrigin === "translated" && !translatedFields.originalLanguage) {
+      return res.status(400).json({ error: "Truyện dịch cần có ngôn ngữ gốc" });
     }
 
     // Validate slug format: only lowercase letters, numbers, and hyphens
@@ -174,6 +243,7 @@ router.post("/stories", authRequired, async (req: AuthRequest, res: Response) =>
       data: {
         title, slug, description, coverImage: compressedCover, genre, tags: sanitizedTags ?? null,
         ...(categoryId ? { categoryId } : {}),
+        ...translatedFields,
         theme, expectedChapters: expectedChapters ? (parseInt(expectedChapters) || null) : null,
         worldBuilding, characters, plotOutline,
         targetAudience, postSchedule, isAdult: isAdult === true,
@@ -228,6 +298,7 @@ router.put("/stories/:id", authRequired, async (req: AuthRequest, res: Response)
     if (story.authorId !== user.id) return res.status(403).json({ error: "Forbidden" });
 
     const { title, description, coverImage, genre, tags, categoryId, tagIds, status, theme, expectedChapters, worldBuilding, characters, plotOutline, targetAudience, postSchedule, isAdult } = req.body;
+    const translatedFields = buildTranslatedStoryFields(req.body);
 
     const data: any = {};
     if (title !== undefined) data.title = title;
@@ -258,6 +329,21 @@ router.put("/stories/:id", authRequired, async (req: AuthRequest, res: Response)
     if (targetAudience !== undefined) data.targetAudience = targetAudience;
     if (postSchedule !== undefined) data.postSchedule = postSchedule;
     if (isAdult !== undefined) data.isAdult = isAdult === true;
+    if (req.body.storyOrigin !== undefined) data.storyOrigin = translatedFields.storyOrigin;
+    if (req.body.storyOrigin !== undefined || req.body.originalTitle !== undefined) data.originalTitle = translatedFields.originalTitle;
+    if (req.body.storyOrigin !== undefined || req.body.originalAuthor !== undefined) data.originalAuthor = translatedFields.originalAuthor;
+    if (req.body.storyOrigin !== undefined || req.body.originalLanguage !== undefined) data.originalLanguage = translatedFields.originalLanguage;
+    if (req.body.storyOrigin !== undefined || req.body.translatorName !== undefined) data.translatorName = translatedFields.translatorName;
+    if (req.body.storyOrigin !== undefined || req.body.translationGroup !== undefined) data.translationGroup = translatedFields.translationGroup;
+    if (req.body.storyOrigin !== undefined || req.body.sourceName !== undefined) data.sourceName = translatedFields.sourceName;
+    if (req.body.storyOrigin !== undefined || req.body.sourceUrl !== undefined) data.sourceUrl = translatedFields.sourceUrl;
+
+    if ((req.body.storyOrigin !== undefined || req.body.originalTitle !== undefined) && translatedFields.storyOrigin === "translated" && !translatedFields.originalTitle) {
+      return res.status(400).json({ error: "Truyện dịch cần có tên gốc" });
+    }
+    if ((req.body.storyOrigin !== undefined || req.body.originalLanguage !== undefined) && translatedFields.storyOrigin === "translated" && !translatedFields.originalLanguage) {
+      return res.status(400).json({ error: "Truyện dịch cần có ngôn ngữ gốc" });
+    }
 
     // Reset cover approval when author uploads a NEW cover image (not the same URL)
     // Cover has its own approval flow — do NOT reset story approvalStatus here
@@ -274,6 +360,14 @@ router.put("/stories/:id", authRequired, async (req: AuthRequest, res: Response)
         (data.title && data.title !== story.title) ||
         (data.description && data.description !== story.description) ||
         (data.genre && data.genre !== story.genre) ||
+        (data.storyOrigin && data.storyOrigin !== story.storyOrigin) ||
+        (data.originalTitle !== undefined && data.originalTitle !== story.originalTitle) ||
+        (data.originalAuthor !== undefined && data.originalAuthor !== story.originalAuthor) ||
+        (data.originalLanguage !== undefined && data.originalLanguage !== story.originalLanguage) ||
+        (data.translatorName !== undefined && data.translatorName !== story.translatorName) ||
+        (data.translationGroup !== undefined && data.translationGroup !== story.translationGroup) ||
+        (data.sourceName !== undefined && data.sourceName !== story.sourceName) ||
+        (data.sourceUrl !== undefined && data.sourceUrl !== story.sourceUrl) ||
         (data.isAdult !== undefined && data.isAdult !== story.isAdult);
       if (substantiveChange) {
         data.approvalStatus = "pending";

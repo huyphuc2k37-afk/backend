@@ -61,12 +61,13 @@ router.get("/:slug", async (req: Request, res: Response) => {
       pageSize = "20",
       sort = "updated",
       status,
+      story_origin,
     } = req.query;
 
     const pageNum = Math.max(1, parseInt(page as string) || 1);
     const pageSizeNum = Math.min(60, Math.max(1, parseInt(pageSize as string) || 20));
 
-    const cacheKey = `tag:${slug}:${page}:${pageSize}:${sort}:${status || ""}`;
+    const cacheKey = `tag:${slug}:${page}:${pageSize}:${sort}:${status || ""}:${story_origin || ""}`;
 
     const result = await cached(cacheKey, SHORT_TTL, async () => {
       const tag = await prisma.tag.findUnique({
@@ -83,6 +84,9 @@ router.get("/:slug", async (req: Request, res: Response) => {
 
       if (status && ["ongoing", "completed"].includes(status as string)) {
         where.status = status as string;
+      }
+      if (story_origin === "original" || story_origin === "translated") {
+        where.storyOrigin = story_origin;
       }
 
       let orderBy: any;
@@ -105,6 +109,11 @@ router.get("/:slug", async (req: Request, res: Response) => {
             slug: true,
             description: true,
             genre: true,
+            storyOrigin: true,
+            originalTitle: true,
+            originalAuthor: true,
+            originalLanguage: true,
+            translatorName: true,
             status: true,
             views: true,
             likes: true,

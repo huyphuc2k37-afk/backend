@@ -184,6 +184,14 @@ model Story {
   coverApprovalStatus String @default("pending") // pending | approved | rejected
   coverRejectionReason String? // lý do từ chối ảnh bìa
   tags            String?   // legacy: comma-separated (migrated to StoryTag)
+  storyOrigin     String    @default("original") // original | translated
+  originalTitle   String?
+  originalAuthor  String?
+  originalLanguage String?
+  translatorName  String?
+  translationGroup String?
+  sourceName      String?
+  sourceUrl       String?
   views           Int       @default(0)
   lastSettledViews Int      @default(0) // views already paid to author (for view-earnings settlement)
   likes           Int       @default(0)
@@ -223,6 +231,7 @@ model Story {
   @@index([views])
   @@index([likes])
   @@index([genre])
+  @@index([storyOrigin])
   @@index([featuredSlot])
   @@index([categoryId])
   @@index([updatedAt])

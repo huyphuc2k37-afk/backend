@@ -134,6 +134,14 @@ router.get("/stories/:id", authRequired, modRequired, async (req: AuthRequest, r
         coverRejectionReason: true,
         genre: true,
         tags: true,
+        storyOrigin: true,
+        originalTitle: true,
+        originalAuthor: true,
+        originalLanguage: true,
+        translatorName: true,
+        translationGroup: true,
+        sourceName: true,
+        sourceUrl: true,
         status: true,
         isAdult: true,
         approvalStatus: true,
@@ -687,7 +695,7 @@ router.put("/stories/:id/edit", authRequired, modRequired, async (req: AuthReque
     });
     if (!story) return res.status(404).json({ error: "Story not found" });
 
-    const { title, description, coverImage, genre, tags, categoryId, status, isAdult } = req.body;
+    const { title, description, coverImage, genre, tags, categoryId, status, isAdult, storyOrigin, originalTitle, originalAuthor, originalLanguage, translatorName, translationGroup, sourceName, sourceUrl } = req.body;
 
     const data: any = {};
     if (title !== undefined) data.title = title;
@@ -702,6 +710,25 @@ router.put("/stories/:id/edit", authRequired, modRequired, async (req: AuthReque
       }
     }
     if (categoryId !== undefined) data.categoryId = categoryId || null;
+    if (storyOrigin !== undefined) {
+      data.storyOrigin = storyOrigin === "translated" ? "translated" : "original";
+      if (data.storyOrigin === "original") {
+        data.originalTitle = null;
+        data.originalAuthor = null;
+        data.originalLanguage = null;
+        data.translatorName = null;
+        data.translationGroup = null;
+        data.sourceName = null;
+        data.sourceUrl = null;
+      }
+    }
+    if (originalTitle !== undefined) data.originalTitle = typeof originalTitle === "string" ? originalTitle.trim() || null : null;
+    if (originalAuthor !== undefined) data.originalAuthor = typeof originalAuthor === "string" ? originalAuthor.trim() || null : null;
+    if (originalLanguage !== undefined) data.originalLanguage = typeof originalLanguage === "string" ? originalLanguage.trim() || null : null;
+    if (translatorName !== undefined) data.translatorName = typeof translatorName === "string" ? translatorName.trim() || null : null;
+    if (translationGroup !== undefined) data.translationGroup = typeof translationGroup === "string" ? translationGroup.trim() || null : null;
+    if (sourceName !== undefined) data.sourceName = typeof sourceName === "string" ? sourceName.trim() || null : null;
+    if (sourceUrl !== undefined) data.sourceUrl = typeof sourceUrl === "string" ? sourceUrl.trim() || null : null;
     if (status !== undefined) {
       if (["ongoing", "completed", "paused"].includes(status)) {
         data.status = status;
@@ -731,6 +758,8 @@ router.put("/stories/:id/edit", authRequired, modRequired, async (req: AuthReque
       select: {
         id: true, title: true, slug: true, description: true, coverImage: true,
         genre: true, tags: true, categoryId: true, status: true, isAdult: true,
+        storyOrigin: true, originalTitle: true, originalAuthor: true, originalLanguage: true,
+        translatorName: true, translationGroup: true, sourceName: true, sourceUrl: true,
         approvalStatus: true, updatedAt: true,
       },
     });
@@ -883,6 +912,14 @@ router.post("/stories/:id/copy", authRequired, modRequired, async (req: AuthRequ
           coverImage: original.coverImage,
           genre: original.genre,
           tags: original.tags,
+          storyOrigin: original.storyOrigin,
+          originalTitle: original.originalTitle,
+          originalAuthor: original.originalAuthor,
+          originalLanguage: original.originalLanguage,
+          translatorName: original.translatorName,
+          translationGroup: original.translationGroup,
+          sourceName: original.sourceName,
+          sourceUrl: original.sourceUrl,
           categoryId: original.categoryId,
           status: original.status,
           approvalStatus: "approved",

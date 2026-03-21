@@ -218,6 +218,14 @@ const TAGS: TagDef[] = [
   { name: "Oneshot", slug: "oneshot", type: "form" },
   { name: "Truyện ngắn", slug: "truyen-ngan", type: "form" },
   { name: "Tiểu thuyết", slug: "tieu-thuyet", type: "form" },
+
+  // ── origin: Xuất xứ / tình trạng dịch ──
+  { name: "Truyện dịch", slug: "truyen-dich", type: "origin" },
+  { name: "Trung Quốc", slug: "trung-quoc", type: "origin" },
+  { name: "Hàn Quốc", slug: "han-quoc", type: "origin" },
+  { name: "Nhật Bản", slug: "nhat-ban", type: "origin" },
+  { name: "Âu Mỹ", slug: "au-my", type: "origin" },
+  { name: "Việt hóa", slug: "viet-hoa", type: "origin" },
 ];
 
 /* ══════════════════════════════════════════════════

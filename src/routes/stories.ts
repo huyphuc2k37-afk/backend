@@ -28,10 +28,14 @@ router.get("/", async (req: Request, res: Response) => {
       page = "1", limit = "20",
       is_paid, is_adult,
       featured,
+      story_origin,
     } = req.query;
 
     const where: any = { approvalStatus: "approved" };
     if (featured === "true") where.featuredSlot = { not: null };
+    if (story_origin === "original" || story_origin === "translated") {
+      where.storyOrigin = story_origin;
+    }
     if (genre) {
       // Match stories where the genre field contains the name (exact or as part of comma-separated list)
       // OR there's a matching StoryTag (type=genre) with that name.
@@ -59,6 +63,9 @@ router.get("/", async (req: Request, res: Response) => {
     if (search) {
       const searchOR = [
         { title: { contains: search as string, mode: "insensitive" } },
+        { originalTitle: { contains: search as string, mode: "insensitive" } },
+        { originalAuthor: { contains: search as string, mode: "insensitive" } },
+        { translatorName: { contains: search as string, mode: "insensitive" } },
         { description: { contains: search as string, mode: "insensitive" } },
         { author: { name: { contains: search as string, mode: "insensitive" } } },
       ];
@@ -81,7 +88,7 @@ router.get("/", async (req: Request, res: Response) => {
 
     const pageNum = Math.max(1, parseInt(page as string) || 1);
     const limitNum = Math.min(100, Math.max(1, parseInt(limit as string) || 20));
-    const cacheKey = `stories:${genre || ""}:${category || ""}:${tagSlugs || ""}:${status || ""}:${search || ""}:${sort}:${pageNum}:${limitNum}:${is_paid || ""}:${is_adult || ""}:${featured || ""}`;
+    const cacheKey = `stories:${genre || ""}:${category || ""}:${tagSlugs || ""}:${status || ""}:${search || ""}:${sort}:${pageNum}:${limitNum}:${is_paid || ""}:${is_adult || ""}:${featured || ""}:${story_origin || ""}`;
 
     const result = await cached(cacheKey, SHORT_TTL, async () => {
       const [stories, total] = await Promise.all([
@@ -98,6 +105,14 @@ router.get("/", async (req: Request, res: Response) => {
             featuredSlot: true,
             genre: true,
             tags: true,
+            storyOrigin: true,
+            originalTitle: true,
+            originalAuthor: true,
+            originalLanguage: true,
+            translatorName: true,
+            translationGroup: true,
+            sourceName: true,
+            sourceUrl: true,
             status: true,
             views: true,
             likes: true,
