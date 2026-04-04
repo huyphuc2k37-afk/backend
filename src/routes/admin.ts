@@ -487,6 +487,49 @@ router.delete("/stories/:id", authRequired, adminRequired, async (req: AuthReque
   }
 });
 
+// ─── PUT /api/admin/stories/:id/boost-views — cộng thêm views cho truyện ──
+router.put("/stories/:id/boost-views", authRequired, adminRequired, async (req: AuthRequest, res: Response) => {
+  try {
+    const storyId = req.params.id;
+    const amount = parseInt(req.body?.amount);
+
+    if (!Number.isInteger(amount) || amount < 1 || amount > 1_000_000) {
+      return res.status(400).json({ error: "Số lượt xem phải từ 1 đến 1,000,000" });
+    }
+
+    const story = await prisma.story.findUnique({
+      where: { id: storyId },
+      select: { id: true, title: true, views: true, lastSettledViews: true },
+    });
+
+    if (!story) {
+      return res.status(404).json({ error: "Không tìm thấy truyện" });
+    }
+
+    // Increment views AND lastSettledViews so boosted views don't generate author earnings
+    const updated = await prisma.story.update({
+      where: { id: storyId },
+      data: {
+        views: { increment: amount },
+        lastSettledViews: { increment: amount },
+      },
+      select: { id: true, title: true, views: true },
+    });
+
+    invalidateCache("stories:*");
+    invalidateCache("ranking:*");
+
+    return res.json({
+      success: true,
+      story: updated,
+      message: `Đã cộng ${amount.toLocaleString()} lượt xem cho "${story.title}" (tổng: ${updated.views.toLocaleString()})`,
+    });
+  } catch (error) {
+    console.error("Error boosting views:", error);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // ─── GET /api/admin/stories/:id/chapters — danh sách chương của truyện ──
 router.get("/stories/:id/chapters", authRequired, adminRequired, async (req: AuthRequest, res: Response) => {
   try {
