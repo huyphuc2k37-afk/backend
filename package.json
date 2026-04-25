@@ -16,6 +16,7 @@
     "db:setup": "node setup_db.js",
     "db:seed-tags": "node seed_tags.js",
     "db:seed-categories-tags": "tsx scripts/seed-categories-tags.ts",
+    "db:repair-covers": "tsx scripts/repair-supabase-covers.ts",
     "db:clean": "node clean_db.js",
     "test": "jest --forceExit",
     "test:watch": "jest --watch --forceExit"
