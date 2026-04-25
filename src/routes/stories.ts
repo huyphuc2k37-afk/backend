@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import prisma from "../lib/prisma";
 import { compressBase64Image } from "../lib/compressImage";
 import { cached, SHORT_TTL } from "../lib/cache";
+import { downloadCoverByPublicUrl } from "../lib/supabaseStorage";
 
 const router = Router();
 
@@ -12,11 +13,8 @@ function deriveCoverUrl(story: { coverImage?: string | null; coverApprovalStatus
   if (story.coverApprovalStatus === "rejected") return null;
   // For non-approved stories, cover must be explicitly approved
   if (story.approvalStatus !== "approved" && story.coverApprovalStatus !== "approved") return null;
-  // Only expose direct URL for cloud-stored covers
-  if (story.coverImage.startsWith("http://") || story.coverImage.startsWith("https://")) {
-    return story.coverImage;
-  }
-  return null; // base64 covers still go through /cover endpoint
+  // Always go through /api/stories/:id/cover for resilience (CDN/public URL can fail).
+  return null;
 }
 
 // GET /api/stories — list stories with optional filters
@@ -177,11 +175,30 @@ router.get("/:id/cover", async (req: Request, res: Response) => {
       : story.coverApprovalStatus === "approved";
     if (!coverOk) return res.status(403).end();
 
-    // If coverImage is a URL (cloud storage), redirect with proper caching
-    // URL includes ?v=updatedAt cache-buster from frontend, so we can cache aggressively
+    // If coverImage is a URL (cloud storage), stream via backend instead of redirect.
+    // This avoids client-side failures when public CDN URL returns non-200 (e.g. 402).
     if (story.coverImage.startsWith("http://") || story.coverImage.startsWith("https://")) {
-      res.set("Cache-Control", "public, max-age=86400, stale-while-revalidate=604800");
-      return res.redirect(302, story.coverImage);
+      try {
+        const remote = await fetch(story.coverImage);
+        if (remote.ok) {
+          const contentType = remote.headers.get("content-type") || "image/webp";
+          const buffer = Buffer.from(await remote.arrayBuffer());
+          res.set("Content-Type", contentType);
+          res.set("Cache-Control", "public, max-age=86400, stale-while-revalidate=604800");
+          return res.send(buffer);
+        }
+      } catch {
+        // Fallback below
+      }
+
+      const downloaded = await downloadCoverByPublicUrl(story.coverImage);
+      if (downloaded) {
+        res.set("Content-Type", downloaded.mimeType);
+        res.set("Cache-Control", "public, max-age=86400, stale-while-revalidate=604800");
+        return res.send(downloaded.buffer);
+      }
+
+      return res.status(502).end();
     }
 
     // Legacy: base64 data URI — serve as binary

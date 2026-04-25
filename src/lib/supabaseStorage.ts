@@ -108,3 +108,33 @@ export async function deleteCoverImages(storyId: string): Promise<void> {
 export function isCoverUrl(coverImage: string): boolean {
   return coverImage.startsWith("http://") || coverImage.startsWith("https://");
 }
+
+/**
+ * Download a cover image by its public Supabase URL using service-role credentials.
+ * This bypasses edge/CDN failures on direct public URLs.
+ */
+export async function downloadCoverByPublicUrl(
+  publicUrl: string
+): Promise<{ buffer: Buffer; mimeType: string } | null> {
+  const client = getStorageClient();
+  if (!client) return null;
+
+  let pathInBucket: string | null = null;
+  try {
+    const url = new URL(publicUrl);
+    const marker = "/storage/v1/object/public/covers/";
+    const idx = url.pathname.indexOf(marker);
+    if (idx === -1) return null;
+    pathInBucket = url.pathname.slice(idx + marker.length);
+    if (!pathInBucket) return null;
+  } catch {
+    return null;
+  }
+
+  const { data, error } = await client.storage.from(BUCKET).download(pathInBucket);
+  if (error || !data) return null;
+
+  const arrayBuffer = await data.arrayBuffer();
+  const mimeType = data.type || "image/webp";
+  return { buffer: Buffer.from(arrayBuffer), mimeType };
+}

@@ -9,9 +9,7 @@ function deriveCoverUrl(story: { coverImage?: string | null; coverApprovalStatus
   if (!story.coverImage) return null;
   if (story.coverApprovalStatus === "rejected") return null;
   if (story.approvalStatus !== "approved" && story.coverApprovalStatus !== "approved") return null;
-  if (story.coverImage.startsWith("http://") || story.coverImage.startsWith("https://")) {
-    return story.coverImage;
-  }
+  // Always serve via backend /cover endpoint for consistency and CDN-failure resilience.
   return null;
 }
 
