@@ -6,14 +6,13 @@ import compression from "compression";
 import rateLimit from "express-rate-limit";
 import helmet from "helmet";
 
-// ─── Sentry Error Monitoring ─────────────────────
+// ??? Sentry Error Monitoring ?????????????????????
 if (process.env.SENTRY_DSN) {
   Sentry.init({
     dsn: process.env.SENTRY_DSN,
     environment: process.env.NODE_ENV || "development",
     tracesSampleRate: 0.1, // 10% of transactions
     beforeSend(event) {
-      // Strip sensitive data
       if (event.request?.headers) {
         delete event.request.headers["authorization"];
         delete event.request.headers["cookie"];
@@ -21,7 +20,7 @@ if (process.env.SENTRY_DSN) {
       return event;
     },
   });
-  console.log("🔍 Sentry error monitoring enabled");
+  console.log("Sentry error monitoring enabled");
 }
 
 // Import routes
@@ -49,20 +48,19 @@ import tagsRouter from "./routes/tags";
 import messagesRouter from "./routes/messages";
 import questsRouter from "./routes/quests";
 import { startTelegramPolling } from "./lib/telegram";
+import {
+  maintenanceMiddleware,
+  maintenanceStatusHandler,
+} from "./middleware/maintenance";
 
 const app = express();
 const PORT = Number(process.env.PORT) || 5000;
 
 app.disable("x-powered-by");
-app.set("trust proxy", true); // Required: Render/Vercel are reverse proxies — get real user IP from X-Forwarded-For
+app.set("trust proxy", true);
 
-// ─── Middleware ───────────────────────────────────
+// ??? Middleware ???????????????????????????????????
 const normalizeOrigin = (origin: string): string => {
-  // Normalize for reliable comparisons:
-  // - trim whitespace
-  // - strip trailing slashes
-  // - lowercase hostname
-  // - keep protocol + host (+ port if present)
   const trimmed = origin.trim().replace(/\/+$/, "");
   try {
     const url = new URL(trimmed);
@@ -75,22 +73,17 @@ const normalizeOrigin = (origin: string): string => {
 };
 
 const addWwwApexPair = (origin: string, set: Set<string>) => {
-  // If env only includes apex or www, allow the other as well.
-  // Keeps CORS strict while handling common domain setups.
   try {
     const url = new URL(origin);
     const hostname = url.hostname.toLowerCase();
     const port = url.port ? `:${url.port}` : "";
     const base = `${url.protocol}//`;
-
     if (hostname.startsWith("www.")) {
       set.add(`${base}${hostname.slice(4)}${port}`);
     } else {
       set.add(`${base}www.${hostname}${port}`);
     }
-  } catch {
-    // ignore
-  }
+  } catch {}
 };
 
 const parseAllowedOrigins = (value: string | undefined): string[] => {
@@ -130,73 +123,70 @@ app.use(
   helmet({
     contentSecurityPolicy: false,
     crossOriginEmbedderPolicy: false,
-    crossOriginResourcePolicy: { policy: "cross-origin" }, // allow images to be loaded from frontend (different origin)
+    crossOriginResourcePolicy: { policy: "cross-origin" },
   })
 );
 app.use(compression());
 
-// ─── Track last request time for keep-alive ──────
 let lastRequestTime = Date.now();
-app.use((_req, _res, next) => { lastRequestTime = Date.now(); next(); });
+app.use((_req, _res, next) => {
+  lastRequestTime = Date.now();
+  next();
+});
 app.use(express.json({ limit: "5mb" }));
 
-// ─── Rate Limiting ───────────────────────────────
-// General: 200 requests per minute per IP
+// Maintenance Mode middleware - read env at request time
+app.use(maintenanceMiddleware);
+
+// Quick health probe endpoint
+app.get("/api/health", (_req, res) => {
+  res.json({
+    status: "ok",
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// Maintenance status endpoint (always available)
+app.get("/api/maintenance/status", maintenanceStatusHandler);
+
+// Debug env visibility (always available, returns minimal info)
+app.get("/api/_env/maintenance", (_req, res) => {
+  res.json({
+    MAINTENANCE_MODE_raw: process.env.MAINTENANCE_MODE ?? null,
+    MAINTENANCE_MODE_parsed: process.env.MAINTENANCE_MODE === "true",
+    isMaintenanceMode: process.env.MAINTENANCE_MODE === "true",
+    NODE_ENV: process.env.NODE_ENV ?? null,
+  });
+});
+
+// Rate Limiting
 const generalLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 200,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: "Quá nhiều yêu cầu, vui lòng thử lại sau" },
+  message: { error: "Too many requests" },
 });
 app.use("/api", generalLimiter);
 
-// Strict: 10 requests per minute for auth endpoints (login, register, resend)
 const authLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 10,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: "Quá nhiều yêu cầu đăng nhập/đăng ký, vui lòng thử lại sau 1 phút" },
+  message: { error: "Too many auth requests" },
 });
 app.use("/api/auth/login", authLimiter);
 app.use("/api/auth/register", authLimiter);
 app.use("/api/auth/resend", authLimiter);
 app.use("/api/auth/verify", authLimiter);
 
-// Very strict: max 3 registrations per hour per IP (anti-spam)
-const registerSpamLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000, // 1 hour
-  max: 3,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: "Bạn đã đăng ký quá nhiều tài khoản. Vui lòng thử lại sau 1 giờ." },
-});
-app.use("/api/auth/register", registerSpamLimiter);
-
-// Write: 30 requests per minute for write operations
-const writeLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 30,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: "Quá nhiều yêu cầu, vui lòng thử lại sau" },
-});
-app.use("/api/comments", writeLimiter);
-app.use("/api/wallet", writeLimiter);
-
-// ─── Health check ────────────────────────────────
-app.get("/api/health", (_req, res) => {
-  res.json({ status: "ok", timestamp: new Date().toISOString() });
-});
-
-// ─── Routes ──────────────────────────────────────
-// Story/chapter management needs larger body for content
+// Routes
 const largeBodyParser = express.json({ limit: "10mb" });
 app.use("/api/manage", largeBodyParser, storyManageRouter);
 
 app.use("/api/stories", storiesRouter);
-app.use("/api/stories", storyDetailRouter);  // handles /api/stories/:slug
+app.use("/api/stories", storyDetailRouter);
 app.use("/api/chapters", chaptersRouter);
 app.use("/api/bookmarks", bookmarksRouter);
 app.use("/api/ranking", rankingRouter);
@@ -208,7 +198,7 @@ app.use("/api/admin", adminRouter);
 app.use("/api/notifications", notificationsRouter);
 app.use("/api/authors", authorsRouter);
 app.use("/api/follows", followsRouter);
-app.use("/api/stories", interactionsRouter); // handles /api/stories/:id/like, /rate
+app.use("/api/stories", interactionsRouter);
 app.use("/api/auth", authRoutes);
 app.use("/api/sitemap", sitemapRouter);
 app.use("/api/mod", moderationRouter);
@@ -218,45 +208,48 @@ app.use("/api/tags", tagsRouter);
 app.use("/api/messages", messagesRouter);
 app.use("/api/quests", questsRouter);
 
-// ─── 404 handler ─────────────────────────────────
+// 404 handler
 app.use((_req, res) => {
   res.status(404).json({ error: "Route not found" });
 });
 
-// ─── Global error handler ────────────────────────
-app.use((err: Error & { type?: string; status?: number }, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  if (err.message?.startsWith("CORS blocked")) {
-    return res.status(403).json({ error: "Origin not allowed" });
+// Global error handler
+app.use(
+  (
+    err: Error & { type?: string; status?: number },
+    _req: express.Request,
+    res: express.Response,
+    _next: express.NextFunction
+  ) => {
+    if (err.message?.startsWith("CORS blocked")) {
+      return res.status(403).json({ error: "Origin not allowed" });
+    }
+    if (err.type === "entity.too.large") {
+      return res.status(413).json({ error: "Payload too large" });
+    }
+    if (process.env.SENTRY_DSN) {
+      Sentry.captureException(err);
+    }
+    console.error("Unhandled error:", err);
+    res.status(500).json({ error: "Internal server error" });
   }
-  if (err.type === "entity.too.large") {
-    return res.status(413).json({ error: "Dữ liệu quá lớn. Vui lòng giảm kích thước ảnh bìa" });
-  }
-  // Report to Sentry
-  if (process.env.SENTRY_DSN) {
-    Sentry.captureException(err);
-  }
-  console.error("Unhandled error:", err);
-  res.status(500).json({ error: "Internal server error" });
-});
+);
 
-// ─── Start server ────────────────────────────────
 const server = app.listen(PORT, "0.0.0.0", () => {
-  console.log(`🚀 VStory Backend running at http://0.0.0.0:${PORT}`);
-  console.log(`📖 API docs: http://localhost:${PORT}/api/health`);
+  console.log(`VStory Backend running at http://0.0.0.0:${PORT}`);
+  console.log(`Health: http://localhost:${PORT}/api/health`);
   startTelegramPolling();
 
-  // ─── Self-ping only when idle (no traffic in 14 min) ──
   const RENDER_URL = process.env.RENDER_EXTERNAL_URL;
   if (RENDER_URL) {
     setInterval(() => {
       if (Date.now() - lastRequestTime > 13 * 60 * 1000) {
         fetch(`${RENDER_URL}/api/health`).catch(() => {});
       }
-    }, 60 * 1000); // check every minute
+    }, 60 * 1000);
   }
 });
 
-// ─── Graceful shutdown ───────────────────────────
 import { stopTelegramPolling } from "./lib/telegram";
 const shutdown = () => {
   console.log("Shutting down gracefully...");
