@@ -1,0 +1,2 @@
+# Applied manually via scripts/add-b7-banner-cols.ts
+provider = "postgresql"

@@ -1,0 +1,2 @@
+# Applied manually to live database via scripts/apply-migration.ts
+provider = "postgresql"

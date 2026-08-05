@@ -1,0 +1,2 @@
+# Applied manually to live database via scripts/add-boostedat-col.ts
+provider = "postgresql"
