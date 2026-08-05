@@ -7,6 +7,15 @@ import { invalidateCache } from "../lib/cache";
 
 const router = Router();
 const STORY_ORIGINS = new Set(["original", "translated"]);
+const FIRST_CHAPTERS_FOR_MODERATION = 5;
+
+function chapterApprovalStatusFor(number: number, storyApproved: boolean): "pending" | "approved" {
+  // Yêu cầu A6: Chỉ duyệt 5 chương đầu. Sau đó auto-approve.
+  // Story đã approved → chapter > 5 → approved.
+  // Story chưa approved (pending/rejected) → chapter > 5 cũng pending để chờ duyệt story.
+  if (number <= FIRST_CHAPTERS_FOR_MODERATION) return "pending";
+  return storyApproved ? "approved" : "pending";
+}
 
 function sanitizeStoryTags(tags: unknown): string | null | undefined {
   if (tags === undefined) return undefined;
@@ -489,7 +498,7 @@ router.post("/stories/:storyId/chapters", authRequired, async (req: AuthRequest,
         authorNote,
         isLocked: finalIsLocked,
         price: finalIsLocked ? finalPrice : 0,
-        approvalStatus: "pending",
+        approvalStatus: chapterApprovalStatusFor(nextNumber, story.approvalStatus === "approved"),
         storyId: req.params.storyId,
       },
     });
@@ -499,12 +508,14 @@ router.post("/stories/:storyId/chapters", authRequired, async (req: AuthRequest,
 
     res.status(201).json(chapter);
 
-    // Notify moderators about new chapter pending review
-    notifyModerators({
-      title: "📝 Chương mới cần duyệt",
-      message: `Chương ${nextNumber}: "${title}" của truyện "${story.title}" cần được kiểm duyệt.`,
-      link: "/mod",
-    });
+    // Notify moderators only for first 5 chapters (the ones that need review)
+    if (nextNumber <= FIRST_CHAPTERS_FOR_MODERATION) {
+      notifyModerators({
+        title: "📝 Chương mới cần duyệt",
+        message: `Chương ${nextNumber}: "${title}" của truyện "${story.title}" cần được kiểm duyệt.`,
+        link: "/mod",
+      });
+    }
   } catch (error) {
     console.error("Error creating chapter:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -551,6 +562,7 @@ router.post("/stories/:storyId/chapters/bulk", authRequired, async (req: AuthReq
     let nextNumber = (lastChapter?.number || 0) + 1;
 
     // Prepare chapter data
+    const storyApproved = story.approvalStatus === "approved";
     const chapterData = chapters.map((ch, i) => {
       const num = nextNumber + i;
       const wordCount = ch.content.replace(/<[^>]*>/g, "").split(/\s+/).filter(Boolean).length;
@@ -572,10 +584,14 @@ router.post("/stories/:storyId/chapters/bulk", authRequired, async (req: AuthReq
         wordCount,
         isLocked: finalIsLocked,
         price: finalIsLocked ? finalPrice : 0,
-        approvalStatus: "pending" as const,
+        // Yêu cầu A6: chỉ 5 chương đầu cần duyệt, các chương sau auto-approved khi story đã duyệt
+        approvalStatus: chapterApprovalStatusFor(num, storyApproved),
         storyId: req.params.storyId,
       };
     });
+
+    // Tính số chương cần duyệt thật sự (≤ 5 hoặc story chưa duyệt)
+    const pendingCount = chapterData.filter((c) => c.approvalStatus === "pending").length;
 
     // Bulk create in transaction
     const result = await prisma.$transaction(async (tx) => {
@@ -591,12 +607,14 @@ router.post("/stories/:storyId/chapters/bulk", authRequired, async (req: AuthReq
       lastNumber: nextNumber + chapters.length - 1,
     });
 
-    // Notify moderators
-    notifyModerators({
-      title: "📝 Nhiều chương mới cần duyệt",
-      message: `${result.count} chương mới (${nextNumber}–${nextNumber + chapters.length - 1}) của truyện "${story.title}" cần được kiểm duyệt.`,
-      link: "/mod",
-    });
+    // Chỉ thông báo mod khi có chương thực sự cần duyệt
+    if (pendingCount > 0) {
+      notifyModerators({
+        title: "📝 Chương mới cần duyệt",
+        message: `${pendingCount} chương mới (${nextNumber}–${nextNumber + chapters.length - 1}) của truyện "${story.title}" cần được kiểm duyệt.`,
+        link: "/mod",
+      });
+    }
   } catch (error) {
     console.error("Error bulk creating chapters:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -632,7 +650,7 @@ router.put("/chapters/:id", authRequired, async (req: AuthRequest, res: Response
 
     const chapter = await prisma.chapter.findUnique({
       where: { id: req.params.id },
-      include: { story: { select: { authorId: true, title: true } } },
+      include: { story: { select: { authorId: true, title: true, approvalStatus: true } } },
     });
 
     if (!chapter) return res.status(404).json({ error: "Chapter not found" });
@@ -666,16 +684,33 @@ router.put("/chapters/:id", authRequired, async (req: AuthRequest, res: Response
       }
     }
 
-    // Reset to pending when author edits content of a chapter
+    // A6: chỉ reset về pending khi là 1 trong 5 chương đầu (còn lại auto-approve vì đã qua cổng duyệt)
     if (data.content || data.title) {
-      data.approvalStatus = "pending";
-      data.rejectionReason = null;
+      if (chapter.number <= FIRST_CHAPTERS_FOR_MODERATION) {
+        data.approvalStatus = "pending";
+        data.rejectionReason = null;
+      } else if (chapter.approvalStatus !== "approved") {
+        // Story chưa duyệt → chương vẫn pending
+        data.approvalStatus = "pending";
+        data.rejectionReason = null;
+      } else {
+        // Chương > 5 và story đã approved → giữ trạng thái approved
+        // (pending hoặc rejected đều được nâng lên approved vì đã qua cổng duyệt)
+        if (chapter.approvalStatus !== "approved") {
+          data.approvalStatus = "approved";
+          data.rejectionReason = null;
+        }
+      }
     }
 
     const updated = await prisma.chapter.update({ where: { id: req.params.id }, data });
 
-    // Notify moderators if chapter was reset to pending
-    if (data.approvalStatus === "pending" && chapter.approvalStatus !== "pending") {
+    // Notify moderators if a first-5 chapter was reset to pending
+    if (
+      data.approvalStatus === "pending" &&
+      chapter.approvalStatus !== "pending" &&
+      chapter.number <= FIRST_CHAPTERS_FOR_MODERATION
+    ) {
       notifyModerators({
         title: "📝 Chương chỉnh sửa cần duyệt lại",
         message: `Chương ${chapter.number}: "${updated.title}" (truyện "${chapter.story.title}") đã được chỉnh sửa và cần duyệt lại.`,

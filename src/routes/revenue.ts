@@ -7,6 +7,63 @@ import type { PrismaClient as GeneratedPrismaClient } from ".prisma/client";
 
 const router = Router();
 
+// A7: per-view rate constant exposed to the API so the UI can render it
+const XU_PER_VIEW = 2;
+
+/**
+ * A7: Nhóm earnings theo tháng (YYYY-MM), 12 tháng gần nhất.
+ * Mỗi entry: { month, label, purchases, tips, views, total }
+ */
+function buildMonthlyChart(earnings: Array<{ amount: number; createdAt: Date; type: string }>) {
+  const map: Record<string, { purchases: number; tips: number; views: number; total: number }> = {};
+  const now = new Date();
+  // Khởi tạo 12 tháng gần nhất
+  for (let i = 11; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    map[key] = { purchases: 0, tips: 0, views: 0, total: 0 };
+  }
+  for (const e of earnings) {
+    const d = e.createdAt;
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    if (!map[key]) continue;
+    if (e.type === "purchase") map[key].purchases += e.amount;
+    else if (e.type === "view") map[key].views += e.amount;
+    else map[key].tips += e.amount;
+    map[key].total += e.amount;
+  }
+  return Object.entries(map).map(([month, data]) => ({
+    month,
+    label: month, // YYYY-MM
+    ...data,
+  }));
+}
+
+/**
+ * A7: Nhóm earnings theo năm (YYYY), 5 năm gần nhất.
+ */
+function buildYearlyChart(earnings: Array<{ amount: number; createdAt: Date; type: string }>) {
+  const map: Record<string, { purchases: number; tips: number; views: number; total: number }> = {};
+  const now = new Date();
+  for (let i = 4; i >= 0; i--) {
+    const y = now.getFullYear() - i;
+    map[String(y)] = { purchases: 0, tips: 0, views: 0, total: 0 };
+  }
+  for (const e of earnings) {
+    const y = String(e.createdAt.getFullYear());
+    if (!map[y]) continue;
+    if (e.type === "purchase") map[y].purchases += e.amount;
+    else if (e.type === "view") map[y].views += e.amount;
+    else map[y].tips += e.amount;
+    map[y].total += e.amount;
+  }
+  return Object.entries(map).map(([year, data]) => ({
+    year,
+    label: year,
+    ...data,
+  }));
+}
+
 // ─── GET /api/revenue — thống kê doanh thu tác giả ──
 router.get("/", authRequired, async (req: AuthRequest, res: Response) => {
   try {
@@ -76,27 +133,67 @@ router.get("/", authRequired, async (req: AuthRequest, res: Response) => {
     // Tổng doanh thu từ lượt xem
     const viewRevenue = await prisma.authorEarning.aggregate({
       where: { authorId: user.id, type: "view" },
-      _sum: { amount: true },
+      _sum: { amount: true, viewCount: true },
       _count: true,
     });
 
     const totalChaptersSold = purchaseRevenue._count || 0;
     const totalTips = tipRevenue._count || 0;
     const totalViewSettlements = viewRevenue._count || 0;
+    const totalViews = viewRevenue._sum.viewCount || 0;
 
     // Doanh thu theo truyện
-    const revenueByStory: Record<string, { title: string; purchases: number; tips: number; viewEarnings: number; revenue: number }> = {};
+    const revenueByStory: Record<string, { title: string; purchases: number; tips: number; viewEarnings: number; viewCount: number; revenue: number }> = {};
     for (const e of allEarnings) {
       const sid = e.storyId || "unknown";
       if (!revenueByStory[sid]) {
-        revenueByStory[sid] = { title: e.storyTitle || "Không xác định", purchases: 0, tips: 0, viewEarnings: 0, revenue: 0 };
+        revenueByStory[sid] = {
+          title: e.storyTitle || "Không xác định",
+          purchases: 0,
+          tips: 0,
+          viewEarnings: 0,
+          viewCount: 0,
+          revenue: 0,
+        };
       }
       if (e.type === "purchase") revenueByStory[sid].purchases++;
       if (e.type === "tip") revenueByStory[sid].tips++;
-      if (e.type === "view") revenueByStory[sid].viewEarnings += e.amount;
+      if (e.type === "view") {
+        revenueByStory[sid].viewEarnings += e.amount;
+        revenueByStory[sid].viewCount += e.viewCount || 0;
+      }
       revenueByStory[sid].revenue += e.amount;
     }
     const topStories = Object.values(revenueByStory).sort((a, b) => b.revenue - a.revenue);
+
+    // Per-chapter breakdown: chỉ chapters có earning (purchase/tip, không view)
+    const revenueByChapterMap: Record<string, {
+      chapterId: string;
+      storyId: string | null;
+      storyTitle: string;
+      chapterTitle: string;
+      purchases: number;
+      tips: number;
+      total: number;
+    }> = {};
+    for (const e of allEarnings) {
+      if (!e.chapterId) continue;
+      if (!revenueByChapterMap[e.chapterId]) {
+        revenueByChapterMap[e.chapterId] = {
+          chapterId: e.chapterId,
+          storyId: e.storyId || null,
+          storyTitle: e.storyTitle || "",
+          chapterTitle: e.chapterTitle || "",
+          purchases: 0,
+          tips: 0,
+          total: 0,
+        };
+      }
+      if (e.type === "purchase") revenueByChapterMap[e.chapterId].purchases += e.amount;
+      else if (e.type === "tip") revenueByChapterMap[e.chapterId].tips += e.amount;
+      revenueByChapterMap[e.chapterId].total += e.amount;
+    }
+    const revenueByChapter = Object.values(revenueByChapterMap).sort((a, b) => b.total - a.total);
 
     // Pending withdrawals
     const pendingWithdraw = await prisma.withdrawal.aggregate({
@@ -115,22 +212,26 @@ router.get("/", authRequired, async (req: AuthRequest, res: Response) => {
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     const dailyEarnings = await prisma.authorEarning.findMany({
       where: { authorId: user.id, createdAt: { gte: thirtyDaysAgo } },
-      select: { amount: true, createdAt: true, type: true },
+      select: { amount: true, createdAt: true, type: true, viewCount: true },
       orderBy: { createdAt: "asc" },
     });
 
-    const dailyMap: Record<string, { purchases: number; tips: number; views: number; total: number }> = {};
+    const dailyMap: Record<string, { purchases: number; tips: number; views: number; viewCount: number; total: number }> = {};
     for (let i = 0; i < 30; i++) {
       const d = new Date(Date.now() - (29 - i) * 24 * 60 * 60 * 1000);
       const key = d.toISOString().slice(0, 10);
-      dailyMap[key] = { purchases: 0, tips: 0, views: 0, total: 0 };
+      dailyMap[key] = { purchases: 0, tips: 0, views: 0, viewCount: 0, total: 0 };
     }
     for (const e of dailyEarnings) {
       const key = e.createdAt.toISOString().slice(0, 10);
       if (dailyMap[key]) {
         if (e.type === "purchase") dailyMap[key].purchases += e.amount;
-        else if (e.type === "view") dailyMap[key].views += e.amount;
-        else dailyMap[key].tips += e.amount;
+        else if (e.type === "view") {
+          dailyMap[key].views += e.amount;
+          dailyMap[key].viewCount += e.viewCount || 0;
+        } else {
+          dailyMap[key].tips += e.amount;
+        }
         dailyMap[key].total += e.amount;
       }
     }
@@ -148,17 +249,24 @@ router.get("/", authRequired, async (req: AuthRequest, res: Response) => {
       totalChaptersSold,
       totalTips,
       totalViewSettlements,
+      totalViews,
+      viewRate: XU_PER_VIEW,
       purchaseRevenue: purchaseRevenue._sum.amount || 0,
       tipRevenue: tipRevenue._sum.amount || 0,
       viewRevenue: viewRevenue._sum.amount || 0,
       pendingWithdraw: pendingWithdraw._sum.amount || 0,
       referralRevenue,
       topStories,
+      revenueByChapter,
       dailyChart,
+      // A7: Thêm monthly + yearly chart (mỗi mốc 12 tháng / 5 năm)
+      monthlyChart: buildMonthlyChart(allEarnings),
+      yearlyChart: buildYearlyChart(allEarnings),
       recentSales: allEarnings.slice(0, 30).map((e) => ({
         id: e.id,
         type: e.type,
         amount: e.amount,
+        viewCount: e.viewCount || 0,
         storyTitle: e.storyTitle || "",
         chapterTitle: e.chapterTitle || "",
         createdAt: e.createdAt,

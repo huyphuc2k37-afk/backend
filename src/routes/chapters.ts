@@ -36,14 +36,15 @@ router.get("/:id", authOptional, async (req: AuthRequest, res: Response) => {
       }
     }
 
-    // Block access to unapproved chapters (allow author/moderator/admin to still see)
-    if (chapter.approvalStatus !== "approved") {
+    // A6: Chỉ block chapter bị REJECTED. Pending/approved đều cho đọc.
+    // (5 chương đầu vẫn pending nhưng đã qua cổng duyệt story-level, không block.)
+    if (chapter.approvalStatus === "rejected") {
       const canAccess = req.user?.email
         ? await prisma.user.findUnique({ where: { email: req.user.email }, select: { id: true, role: true } })
             .then((u) => u?.id === chapter.story.authorId || u?.role === "moderator" || u?.role === "admin")
         : false;
       if (!canAccess) {
-        return res.status(403).json({ error: "Chương chưa được duyệt" });
+        return res.status(403).json({ error: "Chương này đã bị từ chối" });
       }
     }
 

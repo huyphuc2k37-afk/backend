@@ -44,6 +44,9 @@ model User {
   announcements Announcement[] @relation("AnnouncementCreator")
   sentMessages     Message[]      @relation("MessageSender")
   conversations    ConversationParticipant[]
+  sentGifts        GiftTransaction[] @relation("GiftSender")
+  receivedGifts    GiftTransaction[] @relation("GiftReceiver")
+  paidSuggestions  PaidSuggestion[]
 
   // ── Referral (Mã mời tác giả) ──
   referralCode  String?   @unique // mã mời duy nhất, chỉ tác giả mới có
@@ -52,6 +55,11 @@ model User {
   referrals     User[]    @relation("Referrals") // những user mà mình giới thiệu
   referralEarnings ReferralEarning[]
   dailyQuests   DailyQuest[]
+
+  // ── Relations for new models ──
+  authorBadges       AuthorBadge[]
+  fanClubMember      FanClubMember[]
+  fanClub            FanClub?
 
   @@index([role])
   @@index([referredById])
@@ -197,6 +205,10 @@ model Story {
   likes           Int       @default(0)
   averageRating   Float     @default(0)
   ratingCount     Int       @default(0)
+  // B6: Boost score from paid suggestions. Higher = ranks higher on homepage.
+  // Decays over time in recommendation engine.
+  boostScore      Int       @default(0)
+  boostedAt       DateTime? // last time boostScore was incremented (for decay)
 
   // ── Category (new) ──
   categoryId      String?
@@ -226,6 +238,7 @@ model Story {
   storyLikes      StoryLike[]
   ratings         Rating[]
   storyTags       StoryTag[]
+  paidSuggestions PaidSuggestion[]
 
   @@index([authorId])
   @@index([views])
@@ -401,8 +414,9 @@ model Rating {
 // ─── Author Earnings (Doanh thu tác giả) ─────────
 model AuthorEarning {
   id           String   @id @default(cuid())
-  type         String   // "purchase" | "tip"
+  type         String   // "purchase" | "tip" | "view" | "admin"
   amount       Int      // xu tác giả nhận được
+  viewCount    Int?     // số view tạo ra earning này (chỉ áp dụng cho type="view")
   createdAt    DateTime @default(now())
 
   authorId     String
@@ -416,6 +430,7 @@ model AuthorEarning {
   @@index([authorId, createdAt])
   @@index([authorId, type])
   @@index([storyId])
+  @@index([chapterId])
 }
 
 // ─── Platform Earnings (Doanh thu nền tảng) ─────
@@ -521,12 +536,15 @@ model ViewLog {
   id        String   @id @default(cuid())
   storyId   String
   ip        String
+  userId    String?  // populated when logged in (more reliable dedup than IP)
+  userAgent String?  // populated for bot filtering audit
   createdAt DateTime @default(now())
 
   @@index([storyId])
   @@index([createdAt])
   @@index([ip, storyId, createdAt]) // dedup: 1 view per IP per story per hour
   @@index([ip, createdAt])          // daily cap check
+  @@index([userId, storyId, createdAt]) // dedup: 1 view per user per story per hour
 }
 
 // ─── Banned IPs (Anti-spam) ──────────────────────
@@ -570,4 +588,421 @@ model DailyQuest {
   @@unique([userId, date])
   @@index([userId])
   @@index([date])
+}
+
+// ─── Ad Placements (Vị trí quảng cáo) ────────────
+model AdPlacement {
+  id              String   @id @default(cuid())
+  location        String   @unique // banner_top | banner_sidebar | banner_footer | in_content | reward_video
+  adNetwork       String   @default("google")
+  adUnitId        String?
+  priority        Int      @default(0)
+  isActive        Boolean  @default(true)
+  // B7: custom banner (shop thủ công) fields
+  customImageUrl  String?  // URL ảnh banner
+  customVideoUrl  String?  // URL video banner (optional)
+  clickUrl        String?  // URL khi click banner → shop
+  advertiserName  String?  // Tên shop / nhà quảng cáo
+  advertiserPhone String?  // SĐT liên hệ
+  monthlyPrice    Int?     // Giá/tháng (VND), 500000 = 500k
+  startDate       DateTime? // Ngày bắt đầu hiển thị
+  endDate         DateTime? // Ngày kết thúc
+  paidUntil       DateTime? // Đã thanh toán đến ngày này
+  status          String   @default("network") // network | custom | expired
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ─── Ad Impressions (Lượt xem quảng cáo) ──────────
+model AdImpression {
+  id              String   @id @default(cuid())
+  userId          String?
+  storyId         String?
+  chapterId       String?
+  placement       String   // banner_top | banner_sidebar | banner_footer | in_content | reward_video
+  adNetwork       String   @default("google")
+  adUnitId        String?
+  impressionTime  DateTime @default(now())
+  createdAt       DateTime @default(now())
+
+  @@index([userId])
+  @@index([storyId])
+  @@index([createdAt])
+  @@index([placement])
+}
+
+// ─── Ad Analytics (Thống kê quảng cáo) ────────────
+model AdAnalytics {
+  id              String   @id @default(cuid())
+  date            String   // YYYY-MM-DD format
+  placement       String
+  impressions     Int      @default(0)
+  rewardsClaimed  Int      @default(0)
+  coinsDistributed Int     @default(0)
+  uniqueUsers     Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([date, placement])
+  @@index([date])
+  @@index([placement])
+}
+
+// ─── Ad Rewards (Phần thưởng quảng cáo) ───────────
+model AdReward {
+  id        String   @id @default(cuid())
+  userId    String
+  coins     Int      // Số xu nhận được
+  watchedAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([userId, watchedAt])
+}
+
+// ─── Device Fingerprints (Dấu vân tay thiết bị) ───
+model DeviceFingerprint {
+  id            String   @id @default(cuid())
+  hash          String   @unique // SHA256 fingerprint hash
+  ipAddresses   String[] // Danh sách IP đã sử dụng (giữ tối đa 50)
+  viewCount     Int      @default(1)
+  isBot         Boolean  @default(false)
+  botScore      Int      @default(0)
+  lastSeenAt    DateTime @default(now())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([hash])
+  @@index([ipAddresses])
+}
+
+// ─── User Reading Profiles (Hồ sơ đọc của user) ────
+model UserReadingProfile {
+  id               String    @id @default(cuid())
+  userId           String    @unique
+  favoriteGenres   String[]  // Thể loại yêu thích
+  preferredOrigin  String[]  // original | translated
+  avgReadLength    Int       @default(0) // Độ dài trung bình chương đọc
+  lastUpdated      DateTime  @default(now())
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([userId])
+}
+
+// ─── Recommendation Logs (Nhật ký đề xuất) ───────
+model RecommendationLog {
+  id        String   @id @default(cuid())
+  userId    String
+  storyId   String
+  reason    String   // similar | popular | new | genre | author | collaborative | trending
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([storyId])
+  @@index([createdAt])
+}
+
+// ─── Author Badges (Huy hiệu tác giả) ─────────────
+model AuthorBadge {
+  id        String    @id @default(cuid())
+  authorId  String
+  badgeType String    // top_author | trending | verified | rising_star | prolific | legendary | vip | contest_winner | community_hero
+  earnedAt  DateTime  @default(now())
+  expiresAt DateTime? // null = vĩnh viễn
+  createdAt DateTime  @default(now())
+
+  author    User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@unique([authorId, badgeType, expiresAt])
+  @@index([authorId])
+  @@index([badgeType])
+}
+
+// ─── Author Levels (Cấp bậc tác giả) ──────────────
+model AuthorLevel {
+  id          String @id @default(cuid())
+  level       Int    @unique
+  name        String // Bronze | Silver | Gold | Platinum | Diamond
+  minViews    Int    @default(0)
+  minStories  Int    @default(0)
+  minEarnings Int    @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ─── Affiliate Links (Liên kết_affiliate) ──────────
+model AffiliateLink {
+  id              String   @id @default(cuid())
+  userId          String   // Người tạo link
+  code            String   @unique
+  destination     String   // story | author | campaign | page
+  targetId        String?  // ID của story/author/target
+  targetTitle     String?  // Cache tên
+  clickCount      Int      @default(0)
+  conversionCount Int      @default(0)
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([userId])
+  @@index([code])
+  @@index([destination])
+}
+
+// ─── Affiliate Clicks (Click_affiliate) ────────────
+model AffiliateClick {
+  id        String   @id @default(cuid())
+  linkId    String
+  userId    String?
+  ip        String?
+  userAgent String?
+  referer   String?
+  createdAt DateTime @default(now())
+
+  @@index([linkId])
+  @@index([userId])
+  @@index([createdAt])
+}
+
+// ─── Affiliate Earnings (Thu nhập affiliate) ──────
+model AffiliateEarning {
+  id              String   @id @default(cuid())
+  userId          String   // Người nhận hoa hồng
+  referralUserId  String?  // User được giới thiệu
+  linkId          String?
+  action          String   // signup | first_purchase | view_milestone | referral_read
+  commission      Int      // Số xu hoa hồng
+  description     String?
+  createdAt       DateTime @default(now())
+
+  @@index([userId])
+  @@index([referralUserId])
+  @@index([createdAt])
+}
+
+// ─── Fan Clubs (Fan club tác giả) ─────────────────
+model FanClub {
+  id            String   @id @default(cuid())
+  authorId      String   @unique
+  name          String
+  description   String?
+  totalFans     Int      @default(0)
+  totalCoins    Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  author        User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  members       FanClubMember[]
+  activities    FanClubActivity[]
+
+  @@index([authorId])
+}
+
+// ─── Fan Club Members (Thành viên fan club) ────────
+model FanClubMember {
+  id        String   @id @default(cuid())
+  clubId    String
+  userId    String
+  tier      String   @default("member") // member | vip | svip
+  tierCoins Int      @default(0)
+  joinedAt  DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  club      FanClub  @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([clubId, userId])
+  @@index([clubId])
+  @@index([userId])
+}
+
+// ─── Fan Club Activities (Hoạt động fan club) ──────
+model FanClubActivity {
+  id        String   @id @default(cuid())
+  clubId    String
+  userId    String
+  action    String   // joined | donated | upgraded
+  coins     Int      @default(0)
+  createdAt DateTime @default(now())
+
+  club      FanClub  @relation(fields: [clubId], references: [id], onDelete: Cascade)
+
+  @@index([clubId])
+  @@index([userId])
+  @@index([createdAt])
+}
+
+// ─── Gift Types (Loại quà tặng) ───────────────────
+model GiftType {
+  id            String   @id @default(cuid())
+  name          String
+  emoji         String   // Emoji hiển thị
+  price         Int      // Giá bằng xu
+  animationUrl  String?
+  sortOrder     Int      @default(0)
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  transactions  GiftTransaction[]
+}
+
+// ─── Gift Transactions (Giao dịch quà tặng) ────────
+model GiftTransaction {
+  id          String   @id @default(cuid())
+  senderId    String
+  receiverId  String
+  storyId     String?
+  giftTypeId  String
+  quantity    Int
+  totalCoins  Int
+  message     String?
+  createdAt   DateTime @default(now())
+
+  sender      User     @relation("GiftSender", fields: [senderId], references: [id])
+  receiver    User     @relation("GiftReceiver", fields: [receiverId], references: [id])
+  giftType    GiftType @relation(fields: [giftTypeId], references: [id])
+
+  @@index([senderId])
+  @@index([receiverId])
+  @@index([storyId])
+  @@index([giftTypeId])
+  @@index([createdAt])
+}
+
+// ─── Paid Suggestions (Đề xuất trả phí) ────────────
+model PaidSuggestion {
+  id          String    @id @default(cuid())
+  userId      String
+  storyId     String
+  message     String?
+  coinsSpent  Int
+  status      String    @default("pending") // pending | approved | rejected | cancelled | spam
+  expiresAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user        User      @relation(fields: [userId], references: [id])
+  story       Story     @relation(fields: [storyId], references: [id])
+
+  @@index([userId])
+  @@index([storyId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// ─── Suggestion Pool (Hồ bơi đề xuất) ─────────────
+model SuggestionPool {
+  id      String   @id @default(cuid())
+  date    DateTime @unique // Ngày YYYY-MM-DD
+  slots   Int      @default(5)
+  stories String[] // Array of story IDs
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([date])
+}
+
+// ─── View Sessions (Phiên đọc) ────────────────────
+model ViewSession {
+  id            String   @id @default(cuid())
+  storyId       String
+  userId        String?
+  qualityScore  Float    @default(0)
+  dwellTime     Int      @default(0) // seconds
+  scrollDepth   Float    @default(0) // 0-1
+  chaptersRead  Int      @default(0)
+  startedAt     DateTime @default(now())
+  endedAt       DateTime?
+
+  @@index([storyId])
+  @@index([userId])
+  @@index([startedAt])
+  @@index([qualityScore])
+}
+
+// ─── Realtime View Stats (Thống kê view realtime) ─
+model RealtimeViewStats {
+  id          String   @id @default("global") // Chỉ có 1 record, luôn dùng id="global"
+  todayViews  Int      @default(0)
+  weekViews   Int      @default(0)
+  monthViews  Int      @default(0)
+  activeNow   Int      @default(0)
+  updatedAt   DateTime @updatedAt
+}
+
+// ─── Monthly View Stats (Thống kê view theo tháng) ─
+model MonthlyViewStats {
+  id        String   @id @default(cuid())
+  storyId   String
+  yearMonth String   // YYYY-MM format
+  views     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([storyId, yearMonth])
+  @@index([storyId])
+  @@index([yearMonth])
+}
+
+// ─── Author Ad Config (Cấu hình quảng cáo tác giả) ────────────
+model AuthorAdConfig {
+  id                 String   @id @default(cuid())
+  authorId          String   @unique
+  enabled           Boolean  @default(true)
+  adFrequency       Int      @default(5) // Hiển thị quảng cáo mỗi N chương
+  revenueShare      Float    @default(0.7) // Tỉ lệ tác giả nhận (70%)
+  totalEarnings     Int      @default(0) // Tổng xu kiếm được
+  pendingWithdrawal Int      @default(0) // Xu đang chờ rút
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([authorId])
+}
+
+// ─── Author Ad Earnings (Thu nhập quảng cáo tác giả) ────────
+model AuthorAdEarning {
+  id            String   @id @default(cuid())
+  authorId      String
+  storyId       String
+  chapterId     String
+  chapterNumber Int
+  impressions   Int      @default(0)
+  earnings      Int      @default(0) // xu tác giả nhận
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([authorId, storyId, chapterId])
+  @@index([authorId, createdAt])
+  @@index([storyId])
+}
+
+// ─── Author Ad Logs (Nhật ký hiển thị quảng cáo) ───────────
+model AuthorAdLog {
+  id        String   @id @default(cuid())
+  authorId  String
+  storyId   String
+  chapterId String
+  adShown   Boolean  @default(false)
+  userId    String?
+  createdAt DateTime @default(now())
+
+  @@index([authorId])
+  @@index([storyId])
+  @@index([createdAt])
+}
+
+// ─── Quest Progress (Tiến độ nhiệm vụ) ────────────
+model QuestProgress {
+  id            String   @id @default(cuid())
+  userId        String
+  questId       String   // ID của quest
+  progress      Int      @default(0)
+  completed     Boolean  @default(false)
+  completedAt   DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([userId, questId])
+  @@index([userId])
 }

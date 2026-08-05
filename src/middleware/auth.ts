@@ -1,14 +1,18 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 import { getJwtApiSecret } from "../lib/secrets";
+import { User } from "@prisma/client";
 
 export interface AuthRequest extends Request {
+  id?: string;
   user?: {
     email: string;
     name?: string;
     image?: string;
     sub?: string;
   };
+  adminUser?: User;
+  modUser?: User;
 }
 
 /**

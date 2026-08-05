@@ -2,17 +2,9 @@ import { Router, Response } from "express";
 import prisma from "../lib/prisma";
 import { AuthRequest, authRequired } from "../middleware/auth";
 import { splitRevenue } from "../lib/revenueSplit";
+import { deriveCoverUrl } from "../lib/cover";
 
 const router = Router();
-
-/** Derive a direct cover URL from a Story record */
-function deriveCoverUrl(story: { coverImage?: string | null; coverApprovalStatus?: string; approvalStatus?: string }): string | null {
-  if (!story.coverImage) return null;
-  if (story.coverApprovalStatus === "rejected") return null;
-  if (story.approvalStatus !== "approved" && story.coverApprovalStatus !== "approved") return null;
-  // Always serve via backend /cover endpoint for consistency and CDN-failure resilience.
-  return null;
-}
 
 async function createNotificationSafe(args: Parameters<typeof prisma.notification.create>[0]) {
   try {

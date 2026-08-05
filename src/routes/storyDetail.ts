@@ -1,17 +1,14 @@
 import { Router, Request, Response } from "express";
 import prisma from "../lib/prisma";
 import { cached, SHORT_TTL, invalidateCache } from "../lib/cache";
+import { authOptional } from "../middleware/auth";
+import type { AuthRequest } from "../middleware/auth";
+import { deriveCoverUrl } from "../lib/cover";
 
 const router = Router();
 
-/** Derive a direct cover URL from a Story record */
-function deriveCoverUrl(story: { coverImage?: string | null; coverApprovalStatus?: string; approvalStatus?: string }): string | null {
-  if (!story.coverImage) return null;
-  if (story.coverApprovalStatus === "rejected") return null;
-  if (story.approvalStatus !== "approved" && story.coverApprovalStatus !== "approved") return null;
-  // Always serve via backend /cover endpoint for consistency and CDN-failure resilience.
-  return null;
-}
+/** Bot user-agent blacklist — counted as spam, not real views. Case-insensitive. */
+const BOT_UA_REGEX = /bot|crawl|spider|slurp|facebookexternalhit|whatsapp|telegrambot|preview|monitor|headless|phantom|selenium|puppeteer|scrapy|httpclient|axios\/|node-fetch|python-requests|curl\/|wget\//i;
 
 // ─── View Earning Config ─────────────────────────
 const XU_PER_VIEW = 2; // xu tác giả nhận cho mỗi unique view
@@ -21,7 +18,8 @@ const viewBuffer = new Map<string, number>(); // storyId → count
 const viewedRecently = new Map<string, number>(); // "ip:slug" → timestamp (fast-path cache)
 const VIEW_COOLDOWN = 60 * 60 * 1000; // 1 view per IP per story per hour
 const MAX_VIEW_MAP_SIZE = 50_000;
-const FLUSH_INTERVAL = 5 * 60 * 1000; // flush every 5 minutes
+// A1: flush interval 30s → 5s để view near real-time
+const FLUSH_INTERVAL = 5 * 1000; // flush every 5 seconds
 const DAILY_VIEW_CAP_PER_IP = 50; // max 50 unique story views per IP per day
 
 // ─── Banned IP cache (refresh every 5 min) ───────
@@ -74,6 +72,7 @@ async function settleViewEarnings() {
             data: {
               type: "view",
               amount: earnings,
+              viewCount: delta,
               authorId: story.authorId,
               storyId: story.id,
               storyTitle: story.title,
@@ -112,17 +111,24 @@ async function flushAndSettle() {
   viewBuffer.clear();
 
   console.log(`🔄 Flushing ${entries.length} story view counts...`);
+  const flushedSlugs: string[] = [];
   for (const [storyId, count] of entries) {
     try {
-      await prisma.story.update({
+      const updated = await prisma.story.update({
         where: { id: storyId },
         data: { views: { increment: count } },
+        select: { slug: true },
       });
+      flushedSlugs.push(updated.slug);
     } catch (err) {
       // Story might have been deleted
     }
   }
   invalidateCache("ranking:*");
+  // Invalidate per-story cache so other viewers see updated view counts
+  for (const slug of flushedSlugs) {
+    invalidateCache(`story:${slug}`);
+  }
   console.log(`✅ View flush complete`);
 
   // Now settle view earnings for authors
@@ -144,8 +150,35 @@ setTimeout(async () => {
   await settleViewEarnings();
 }, 10_000);
 
+// GET /api/stories/:slug/views — view count real-time (A1)
+// Phải đặt TRƯỚC route /:slug để tránh bị nuốt path
+router.get("/:slug/views", async (req: Request, res: Response) => {
+  try {
+    const { slug } = req.params;
+    const story = await prisma.story.findUnique({
+      where: { slug },
+      select: { id: true, views: true, approvalStatus: true },
+    });
+    if (!story) return res.status(404).json({ error: "Story not found" });
+    if (story.approvalStatus !== "approved") {
+      return res.status(403).json({ error: "Truyện chưa được duyệt" });
+    }
+    const pending = viewBuffer.get(story.id) || 0;
+    res.json({
+      storyId: story.id,
+      views: story.views,
+      pendingViews: pending,
+      totalViews: story.views + pending,
+      lastUpdated: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error("Error fetching views:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // GET /api/stories/:slug — get single story detail
-router.get("/:slug", async (req: Request, res: Response) => {
+router.get("/:slug", authOptional, async (req: AuthRequest, res: Response) => {
   try {
     const { slug } = req.params;
 
@@ -184,7 +217,8 @@ router.get("/:slug", async (req: Request, res: Response) => {
             select: { tag: { select: { id: true, name: true, slug: true, type: true } } },
           },
           chapters: {
-            where: { approvalStatus: "approved" },
+            // A6: hiển thị mọi chapter không bị rejected (pending vẫn xem được, mod thấy riêng ở /mod)
+            where: { approvalStatus: { not: "rejected" } },
             select: { id: true, title: true, number: true, wordCount: true, isLocked: true, price: true, createdAt: true, updatedAt: true },
             orderBy: { number: "asc" },
           },
@@ -208,10 +242,22 @@ router.get("/:slug", async (req: Request, res: Response) => {
     if (shouldCountView) {
       const rawIp = req.ip || req.headers["x-forwarded-for"] || "unknown";
       const viewerIp = typeof rawIp === "string" ? rawIp.split(",")[0].trim() : "unknown";
+      const userAgent = req.headers["user-agent"] || "";
+      const viewerUserId = req.user?.sub || null;
+
+      // Bot filter — block crawlers/preview bots from inflating view counts
+      const isBot = BOT_UA_REGEX.test(userAgent) || viewerIp === "unknown";
+
+      // Debug log (dev only)
+      if (process.env.NODE_ENV !== "production") {
+        console.log(`[ViewLog] attempt slug=${slug} ip=${viewerIp} userId=${viewerUserId} bot=${isBot} ua="${userAgent.slice(0, 40)}"`);
+      }
 
       // Skip banned IPs entirely
-      if (!bannedIPs.has(viewerIp) && viewerIp !== "unknown") {
-        const viewKey = `${viewerIp}:${slug}`;
+      if (!bannedIPs.has(viewerIp) && !isBot) {
+        // Prefer userId for dedup (one user = one view), fallback to IP for anonymous
+        const dedupKey = viewerUserId || viewerIp;
+        const viewKey = `${dedupKey}:${slug}`;
         const lastViewed = viewedRecently.get(viewKey);
         const now = Date.now();
 
@@ -220,19 +266,30 @@ router.get("/:slug", async (req: Request, res: Response) => {
           // Persistent dedup: check ViewLog in DB (survives restarts)
           const oneHourAgo = new Date(now - VIEW_COOLDOWN);
           const recentDbView = await prisma.viewLog.findFirst({
-            where: { ip: viewerIp, storyId: story.id, createdAt: { gte: oneHourAgo } },
+            where: {
+              storyId: story.id,
+              createdAt: { gte: oneHourAgo },
+              ...(viewerUserId
+                ? { userId: viewerUserId }
+                : { ip: viewerIp }),
+            },
             select: { id: true },
           });
 
           if (!recentDbView) {
-            // Daily cap: max N unique story views per IP per day
-            const todayStart = new Date();
-            todayStart.setHours(0, 0, 0, 0);
-            const dailyCount = await prisma.viewLog.count({
-              where: { ip: viewerIp, createdAt: { gte: todayStart } },
-            });
+            // Daily cap: max N unique story views per IP per day (anonymous only —
+            // logged-in users get uncapped trust per account)
+            let withinDailyCap = true;
+            if (!viewerUserId) {
+              const todayStart = new Date();
+              todayStart.setHours(0, 0, 0, 0);
+              const dailyCount = await prisma.viewLog.count({
+                where: { ip: viewerIp, createdAt: { gte: todayStart } },
+              });
+              withinDailyCap = dailyCount < DAILY_VIEW_CAP_PER_IP;
+            }
 
-            if (dailyCount < DAILY_VIEW_CAP_PER_IP) {
+            if (withinDailyCap) {
               // Update in-memory cache
               if (viewedRecently.size >= MAX_VIEW_MAP_SIZE) {
                 const oldest = viewedRecently.keys().next().value;
@@ -245,8 +302,17 @@ router.get("/:slug", async (req: Request, res: Response) => {
 
               // Persist to ViewLog for dedup across restarts
               prisma.viewLog.create({
-                data: { storyId: story.id, ip: viewerIp },
-              }).catch(() => {});
+                data: {
+                  storyId: story.id,
+                  ip: viewerIp,
+                  userId: viewerUserId,
+                  userAgent: userAgent.slice(0, 250), // cap length to fit TEXT
+                },
+              }).catch((err) => {
+                if (process.env.NODE_ENV !== "production") {
+                  console.error(`[ViewLog] create failed for story=${story.id} ip=${viewerIp} userId=${viewerUserId}:`, err?.message);
+                }
+              });
             }
           } else {
             // DB says viewed recently → update in-memory cache to avoid future DB queries

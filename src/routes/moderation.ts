@@ -7,6 +7,9 @@ import { uploadCoverImage, isStorageEnabled } from "../lib/supabaseStorage";
 
 const router = Router();
 
+// A6: chỉ duyệt 5 chương đầu; chương sau tự động approved khi story approved
+const FIRST_CHAPTERS_FOR_MODERATION = 5;
+
 // ─── Helper: resolve reviewer names from user IDs ──
 async function resolveReviewerNames(ids: (string | null | undefined)[]): Promise<Record<string, string>> {
   const uniqueIds = [...new Set(ids.filter((id): id is string => !!id))];
@@ -310,6 +313,8 @@ router.get("/chapters", authRequired, modRequired, async (req: AuthRequest, res:
 
     const where: any = {};
     if (status !== "all") where.approvalStatus = status;
+    // A6: chỉ 5 chương đầu của mỗi story vào hàng đợi duyệt
+    where.number = { lte: FIRST_CHAPTERS_FOR_MODERATION };
     if (search) {
       where.OR = [
         { title: { contains: search, mode: "insensitive" } },
@@ -402,6 +407,13 @@ router.put("/chapters/:id/approve", authRequired, modRequired, async (req: AuthR
     });
     if (!chapter) return res.status(404).json({ error: "Chapter not found" });
 
+    // A6: chỉ duyệt được 5 chương đầu
+    if (chapter.number > FIRST_CHAPTERS_FOR_MODERATION) {
+      return res.status(400).json({
+        error: `Chỉ duyệt được ${FIRST_CHAPTERS_FOR_MODERATION} chương đầu. Chương ${chapter.number} tự động đăng khi truyện đã được duyệt.`,
+      });
+    }
+
     // Prevent self-moderation
     if (chapter.story.authorId === modUser.id) {
       return res.status(403).json({ error: "Không thể duyệt chương của chính mình" });
@@ -451,6 +463,13 @@ router.put("/chapters/:id/reject", authRequired, modRequired, async (req: AuthRe
       include: { story: { select: { title: true, authorId: true, id: true } } },
     });
     if (!chapter) return res.status(404).json({ error: "Chapter not found" });
+
+    // A6: chỉ duyệt/từ chối được 5 chương đầu
+    if (chapter.number > FIRST_CHAPTERS_FOR_MODERATION) {
+      return res.status(400).json({
+        error: `Chỉ duyệt được ${FIRST_CHAPTERS_FOR_MODERATION} chương đầu. Chương ${chapter.number} tự động đăng khi truyện đã được duyệt.`,
+      });
+    }
 
     // Prevent self-moderation
     if (chapter.story.authorId === modUser.id) {
@@ -507,8 +526,21 @@ router.put("/chapters/approve-bulk", authRequired, modRequired, async (req: Auth
       return res.status(403).json({ error: "Không thể tự duyệt chương của chính mình" });
     }
 
+    // A6: chỉ duyệt được 5 chương đầu — filter chapter > 5 ra khỏi bulk
+    const tooHighChapters = await prisma.chapter.findMany({
+      where: { id: { in: safeIds }, number: { gt: FIRST_CHAPTERS_FOR_MODERATION } },
+      select: { id: true },
+    });
+    const tooHighIds = new Set(tooHighChapters.map((c: { id: string }) => c.id));
+    const elligibleIds = safeIds.filter((id: string) => !tooHighIds.has(id));
+    if (elligibleIds.length === 0) {
+      return res.status(400).json({
+        error: `Chỉ duyệt được ${FIRST_CHAPTERS_FOR_MODERATION} chương đầu. Tất cả chương được chọn đều > ${FIRST_CHAPTERS_FOR_MODERATION}, không cần duyệt.`,
+      });
+    }
+
     const result = await prisma.chapter.updateMany({
-      where: { id: { in: safeIds }, approvalStatus: "pending" },
+      where: { id: { in: elligibleIds }, approvalStatus: "pending" },
       data: {
         approvalStatus: "approved",
         rejectionReason: null,

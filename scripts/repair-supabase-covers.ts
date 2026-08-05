@@ -1,3 +1,22 @@
+/**
+ * DEPRECATED — DO NOT RUN.
+ *
+ * This script was executed on 2026-04-25 and silently overwrote the
+ * `coverImage` column of 191 stories with an inline SVG placeholder. The
+ * original Supabase URLs were lost because the project's egress quota was
+ * already exhausted and the storage URLs could not be re-fetched.
+ *
+ * It has been kept around for archaeological reference only. The fix is
+ * in `scripts/restore-supabase-covers.ts` (Cloudinary-first) and
+ * `scripts/migrate-inline-covers.ts`. See `docs/INCIDENT_2026-04-25.md`
+ * for the full timeline and lessons learned.
+ *
+ * Before re-enabling this file, you MUST:
+ *   1. Read docs/INCIDENT_2026-04-25.md
+ *   2. Confirm the upstream URLs are still alive (HEAD-check)
+ *   3. Add a snapshot backup keyed off BOTH `coverImage` and `updatedAt`
+ *      so a re-run can detect and refuse to overwrite a recently-restored row
+ */
 import { PrismaClient } from "@prisma/client";
 import fs from "fs";
 import path from "path";

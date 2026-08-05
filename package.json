@@ -18,6 +18,9 @@
     "db:seed-categories-tags": "tsx scripts/seed-categories-tags.ts",
     "db:repair-covers": "tsx scripts/repair-supabase-covers.ts",
     "db:clean": "node clean_db.js",
+    "covers:verify": "tsx scripts/verify-covers-pipeline.ts",
+    "covers:fix-inline": "tsx scripts/migrate-inline-covers.ts --apply",
+    "covers:restore-cloudinary": "tsx scripts/restore-supabase-covers.ts --apply --cloudinary-only",
     "test": "jest --forceExit",
     "test:watch": "jest --watch --forceExit"
   },
@@ -36,9 +39,11 @@
     "express-rate-limit": "^8.2.1",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.2",
+    "nanoid": "^6.0.0",
     "next-auth": "^4.24.13",
     "node-cache": "^5.1.2",
-    "sharp": "^0.34.5"
+    "sharp": "^0.34.5",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
@@ -51,6 +56,7 @@
     "@types/sharp": "^0.31.1",
     "@types/supertest": "^6.0.3",
     "jest": "^30.2.0",
+    "pg": "^8.22.0",
     "prisma": "^5.22.0",
     "supertest": "^7.2.2",
     "ts-jest": "^29.4.6",

@@ -5,6 +5,7 @@ import cors from "cors";
 import compression from "compression";
 import rateLimit from "express-rate-limit";
 import helmet from "helmet";
+import path from "path";
 
 // ??? Sentry Error Monitoring ?????????????????????
 if (process.env.SENTRY_DSN) {
@@ -47,6 +48,21 @@ import categoriesRouter from "./routes/categories";
 import tagsRouter from "./routes/tags";
 import messagesRouter from "./routes/messages";
 import questsRouter from "./routes/quests";
+import adsRouter from "./routes/ads";
+import affiliateRouter from "./routes/affiliate";
+import giftsRouter from "./routes/gifts";
+import fanClubRouter from "./routes/fanClub";
+import recommendationsRouter from "./routes/recommendations";
+import paidSuggestionsRouter from "./routes/paidSuggestions";
+import authorAdsRouter from "./routes/authorAds";
+import adminBadgesRouter from "./routes/adminBadges";
+import authorLevelsRouter from "./routes/authorLevels";
+import revenueDashboardRouter from "./routes/revenueDashboard";
+import userPreferencesRouter from "./routes/userPreferences";
+import viewQualityRouter from "./routes/viewQuality";
+import metricsRouter from "./routes/metrics";
+import viewStatsRouter from "./routes/viewStats";
+import readHistoryRouter from "./routes/readHistory";
 import { startTelegramPolling } from "./lib/telegram";
 import {
   maintenanceMiddleware,
@@ -57,9 +73,12 @@ const app = express();
 const PORT = Number(process.env.PORT) || 5000;
 
 app.disable("x-powered-by");
-app.set("trust proxy", true);
+app.set("trust proxy", 1); // Trust only first proxy hop
 
 // ??? Middleware ???????????????????????????????????
+import { requestId, requestLogger } from "./middleware/requestId";
+import { errorHandler, notFoundHandler } from "./lib/errors";
+
 const normalizeOrigin = (origin: string): string => {
   const trimmed = origin.trim().replace(/\/+$/, "");
   try {
@@ -127,6 +146,25 @@ app.use(
   })
 );
 app.use(compression());
+app.use(requestId());
+app.use(requestLogger());
+
+// Serve locally-stored covers (downloaded CDN mirrors) at /storage/...
+// This lets the frontend reference local files instead of remote CDNs.
+const STORAGE_ROOT = path.resolve(__dirname, "..", "..", "local-data", "storage");
+app.use(
+  "/storage",
+  express.static(STORAGE_ROOT, {
+    fallthrough: false,
+    maxAge: "30d",
+    immutable: true,
+    setHeaders(res, filePath) {
+      if (filePath.endsWith(".webp")) res.set("Content-Type", "image/webp");
+      else if (filePath.endsWith(".jpg") || filePath.endsWith(".jpeg")) res.set("Content-Type", "image/jpeg");
+      else if (filePath.endsWith(".png")) res.set("Content-Type", "image/png");
+    },
+  })
+);
 
 let lastRequestTime = Date.now();
 app.use((_req, _res, next) => {
@@ -138,11 +176,33 @@ app.use(express.json({ limit: "5mb" }));
 // Maintenance Mode middleware - read env at request time
 app.use(maintenanceMiddleware);
 
-// Quick health probe endpoint
-app.get("/api/health", (_req, res) => {
+// Quick health probe endpoint with detailed status
+app.get("/api/health", async (_req, res) => {
+  const memory = process.memoryUsage();
+  let dbStatus = "unknown";
+  try {
+    const prismaModule = await import("./lib/prisma");
+    const client = (prismaModule as any).prisma ?? (prismaModule as any).default;
+    if (client && typeof client.$queryRaw === "function") {
+      await client.$queryRaw`SELECT 1`;
+      dbStatus = "ok";
+    } else {
+      dbStatus = "unavailable";
+    }
+  } catch {
+    dbStatus = "error";
+  }
   res.json({
     status: "ok",
     timestamp: new Date().toISOString(),
+    uptime: Math.floor(process.uptime()),
+    database: dbStatus,
+    memory: {
+      rss: Math.round(memory.rss / 1024 / 1024),
+      heapUsed: Math.round(memory.heapUsed / 1024 / 1024),
+      heapTotal: Math.round(memory.heapTotal / 1024 / 1024),
+    },
+    version: process.env.npm_package_version ?? "1.0.0",
   });
 });
 
@@ -166,6 +226,7 @@ const generalLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "Too many requests" },
+  validate: { trustProxy: false },
 });
 app.use("/api", generalLimiter);
 
@@ -175,6 +236,7 @@ const authLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "Too many auth requests" },
+  validate: { trustProxy: false },
 });
 app.use("/api/auth/login", authLimiter);
 app.use("/api/auth/register", authLimiter);
@@ -207,33 +269,33 @@ app.use("/api/categories", categoriesRouter);
 app.use("/api/tags", tagsRouter);
 app.use("/api/messages", messagesRouter);
 app.use("/api/quests", questsRouter);
+app.use("/api/ads", adsRouter);
+app.use("/api/affiliate", affiliateRouter);
+app.use("/api/gifts", giftsRouter);
+app.use("/api/fanclub", fanClubRouter);
+app.use("/api/recommendations", recommendationsRouter);
+app.use("/api/suggestions", paidSuggestionsRouter);
+app.use("/api/author/ads", authorAdsRouter);
+app.use("/api/admin/badges", adminBadgesRouter);
+app.use("/api/levels", authorLevelsRouter);
+app.use("/api/revenue/dashboard", revenueDashboardRouter);
+app.use("/api/user-preferences", userPreferencesRouter);
+app.use("/api/stats", viewQualityRouter);
+app.use("/api/metrics", metricsRouter);
+app.use("/api/views", viewStatsRouter);
+app.use("/api/read-history", readHistoryRouter);
 
-// 404 handler
-app.use((_req, res) => {
-  res.status(404).json({ error: "Route not found" });
-});
-
-// Global error handler
-app.use(
-  (
-    err: Error & { type?: string; status?: number },
-    _req: express.Request,
-    res: express.Response,
-    _next: express.NextFunction
-  ) => {
-    if (err.message?.startsWith("CORS blocked")) {
-      return res.status(403).json({ error: "Origin not allowed" });
-    }
-    if (err.type === "entity.too.large") {
-      return res.status(413).json({ error: "Payload too large" });
-    }
-    if (process.env.SENTRY_DSN) {
-      Sentry.captureException(err);
-    }
-    console.error("Unhandled error:", err);
-    res.status(500).json({ error: "Internal server error" });
+// Centralized 404 + error handlers
+app.use((err: Error, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (err.message?.startsWith("CORS blocked")) {
+    return res.status(403).json({ error: "Origin not allowed", code: "CORS_BLOCKED" });
   }
-);
+  if ((err as any).type === "entity.too.large") {
+    return res.status(413).json({ error: "Payload too large", code: "PAYLOAD_TOO_LARGE" });
+  }
+  return errorHandler(err, _req, res, next);
+});
+app.use(errorHandler);
 
 const server = app.listen(PORT, "0.0.0.0", () => {
   console.log(`VStory Backend running at http://0.0.0.0:${PORT}`);

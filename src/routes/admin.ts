@@ -114,6 +114,45 @@ router.get("/stats", authRequired, adminRequired, async (_req: AuthRequest, res:
   }
 });
 
+// ─── GET /api/admin/stats/story-origins — thống kê tỉ lệ sáng tác vs dịch ──
+// A3 yêu cầu: quản lý tỉ lệ truyện sáng tác và truyện dịch
+router.get("/stats/story-origins", authRequired, adminRequired, async (_req: AuthRequest, res: Response) => {
+  try {
+    const [originalApproved, originalPending, originalRejected, translatedApproved, translatedPending, translatedRejected] = await Promise.all([
+      prisma.story.count({ where: { storyOrigin: "original", approvalStatus: "approved" } }),
+      prisma.story.count({ where: { storyOrigin: "original", approvalStatus: "pending" } }),
+      prisma.story.count({ where: { storyOrigin: "original", approvalStatus: "rejected" } }),
+      prisma.story.count({ where: { storyOrigin: "translated", approvalStatus: "approved" } }),
+      prisma.story.count({ where: { storyOrigin: "translated", approvalStatus: "pending" } }),
+      prisma.story.count({ where: { storyOrigin: "translated", approvalStatus: "rejected" } }),
+    ]);
+
+    const originalTotal = originalApproved + originalPending + originalRejected;
+    const translatedTotal = translatedApproved + translatedPending + translatedRejected;
+    const grandTotal = originalTotal + translatedTotal;
+
+    // Tỉ lệ sáng tác / dịch (chỉ tính approved)
+    const approvedTotal = originalApproved + translatedApproved;
+    const originalRatio = approvedTotal > 0 ? Math.round((originalApproved / approvedTotal) * 100) : 0;
+    const translatedRatio = approvedTotal > 0 ? 100 - originalRatio : 0;
+
+    // Cảnh báo nếu truyện dịch nhiều hơn sáng tác quá nhiều (> 70%)
+    const warning: string | null = translatedRatio > 70 && approvedTotal >= 10
+      ? `Tỉ lệ truyện dịch (${translatedRatio}%) đang vượt trội so với sáng tác (${originalRatio}%). Nên giảm duyệt truyện dịch để cân bằng mục đích ban đầu của nền tảng.`
+      : null;
+
+    res.json({
+      original: { total: originalTotal, approved: originalApproved, pending: originalPending, rejected: originalRejected, ratio: originalRatio },
+      translated: { total: translatedTotal, approved: translatedApproved, pending: translatedPending, rejected: translatedRejected, ratio: translatedRatio },
+      grandTotal,
+      warning,
+    });
+  } catch (error) {
+    console.error("Error fetching story origin stats:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // ─── PUT /api/admin/stats/revenue — điều chỉnh doanh thu (xóa/sửa deposit) ──
 router.put("/stats/revenue", authRequired, adminRequired, async (req: AuthRequest, res: Response) => {
   try {
@@ -359,12 +398,87 @@ router.delete("/users", authRequired, adminRequired, async (req: AuthRequest, re
   }
 });
 
+// ─── GET /api/admin/stories/stats — thống kê truyện (A3 yêu cầu: tách sáng tác/dịch) ──
+// Format khớp với frontend tại frontend/src/app/admin/page.tsx
+router.get("/stories/stats", authRequired, adminRequired, async (_req: AuthRequest, res: Response) => {
+  try {
+    const [originalTotal, translatedTotal, pendingTotal, approvedTotal, rejectedTotal] = await Promise.all([
+      prisma.story.count({ where: { storyOrigin: "original" } }),
+      prisma.story.count({ where: { storyOrigin: "translated" } }),
+      prisma.story.count({ where: { approvalStatus: "pending" } }),
+      prisma.story.count({ where: { approvalStatus: "approved" } }),
+      prisma.story.count({ where: { approvalStatus: "rejected" } }),
+    ]);
+
+    const total = originalTotal + translatedTotal;
+
+    // Top 5 translators
+    const topTranslators = await prisma.story.groupBy({
+      by: ["translatorName"],
+      where: { storyOrigin: "translated", translatorName: { not: null } },
+      _count: { _all: true },
+      orderBy: { _count: { translatorName: "desc" } },
+      take: 5,
+    });
+
+    // Monthly stats (last 12 months)
+    const now = new Date();
+    const months: { label: string; from: Date; to: Date }[] = [];
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const next = new Date(now.getFullYear(), now.getMonth() - i + 1, 1);
+      months.push({
+        label: `${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`,
+        from: d,
+        to: next,
+      });
+    }
+
+    const monthlyAgg = await Promise.all(
+      months.map(async (m) => {
+        const [orig, tran] = await Promise.all([
+          prisma.story.count({ where: { storyOrigin: "original", createdAt: { gte: m.from, lt: m.to } } }),
+          prisma.story.count({ where: { storyOrigin: "translated", createdAt: { gte: m.from, lt: m.to } } }),
+        ]);
+        return { month: m.label, original: orig, translated: tran };
+      })
+    );
+
+    res.json({
+      overview: {
+        total,
+        original: originalTotal,
+        translated: translatedTotal,
+        pending: pendingTotal,
+        approved: approvedTotal,
+        rejected: rejectedTotal,
+        // Cảnh báo tỉ lệ: nếu truyện dịch > 70% truyện đã duyệt
+        warning: approvedTotal >= 10 && translatedTotal / Math.max(1, total) > 0.7
+          ? `Tỉ lệ truyện dịch (${Math.round((translatedTotal / Math.max(1, total)) * 100)}%) đang áp đảo. Nên giảm duyệt truyện dịch.`
+          : null,
+      },
+      topTranslators: topTranslators
+        .filter((t) => t.translatorName !== null)
+        .map((t) => ({ name: t.translatorName, count: t._count._all })),
+      monthlyStats: monthlyAgg,
+    });
+  } catch (error) {
+    console.error("Error fetching stories stats:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // ─── GET /api/admin/stories — danh sách truyện ──
 router.get("/stories", authRequired, adminRequired, async (req: AuthRequest, res: Response) => {
   try {
     const page = parseInt(req.query.page as string) || 1;
     const limit = Math.min(100, parseInt(req.query.limit as string) || 20);
     const search = (req.query.search as string) || "";
+    const storyOrigin = (req.query.storyOrigin as string) || ""; // "original" | "translated" | ""
+    const translatorName = (req.query.translatorName as string) || "";
+    const approvalStatus = (req.query.approvalStatus as string) || ""; // "pending" | "approved" | "rejected" | ""
+    const sortBy = (req.query.sortBy as string) || "updatedAt"; // updatedAt | createdAt | views | likes | title
+    const sortOrder = (req.query.sortOrder as string) || "desc"; // "asc" | "desc"
 
     const where: any = {};
     if (search) {
@@ -373,6 +487,27 @@ router.get("/stories", authRequired, adminRequired, async (req: AuthRequest, res
         { author: { name: { contains: search, mode: "insensitive" } } },
       ];
     }
+    if (storyOrigin === "original" || storyOrigin === "translated") {
+      where.storyOrigin = storyOrigin;
+    }
+    if (translatorName) {
+      where.translatorName = { contains: translatorName, mode: "insensitive" };
+    }
+    if (approvalStatus === "pending" || approvalStatus === "approved" || approvalStatus === "rejected") {
+      where.approvalStatus = approvalStatus;
+    }
+
+    // Whitelist allowed sort fields to prevent API abuse
+    const allowedSortFields: Record<string, string> = {
+      updatedAt: "updatedAt",
+      createdAt: "createdAt",
+      views: "views",
+      likes: "likes",
+      title: "title",
+    };
+    const orderField = allowedSortFields[sortBy] || "updatedAt";
+    const orderDir: "asc" | "desc" = sortOrder === "asc" ? "asc" : "desc";
+    const orderBy: any = { [orderField]: orderDir };
 
     const [stories, total] = await Promise.all([
       prisma.story.findMany({
@@ -384,6 +519,11 @@ router.get("/stories", authRequired, adminRequired, async (req: AuthRequest, res
           featuredSlot: true,
           genre: true,
           status: true,
+          storyOrigin: true,
+          originalTitle: true,
+          originalAuthor: true,
+          translatorName: true,
+          translationGroup: true,
           views: true,
           likes: true,
           isAdult: true,
@@ -393,7 +533,7 @@ router.get("/stories", authRequired, adminRequired, async (req: AuthRequest, res
           author: { select: { id: true, name: true, email: true } },
           _count: { select: { chapters: true, bookmarks: true, comments: true } },
         },
-        orderBy: { updatedAt: "desc" },
+        orderBy,
         skip: (page - 1) * limit,
         take: limit,
       }),
