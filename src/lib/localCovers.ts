@@ -2,6 +2,24 @@ import fs from "fs";
 import path from "path";
 
 /**
+ * Build an absolute URL for paths that originate on the backend (e.g.
+ * /storage/... and /api/stories/:id/cover).
+ *
+ * Without this, the frontend (hosted on a different origin — Vercel at
+ * https://vstory.vn) tries to fetch e.g. https://vstory.vn/storage/... and
+ * gets a 404 because Vercel doesn't serve that path. By prepending the
+ * backend's public origin we always emit a URL the browser can actually load.
+ *
+ * Falls back to the relative path if BACKEND_PUBLIC_URL is not configured —
+ * which preserves existing dev behavior (Next dev proxy still works).
+ */
+export function absoluteBackendUrl(path: string): string {
+  const base = process.env.BACKEND_PUBLIC_URL?.replace(/\/+$/, "");
+  if (!base) return path;
+  return `${base}${path.startsWith("/") ? path : `/${path}`}`;
+}
+
+/**
  * Resolve the on-disk path of a locally-mirrored Cloudinary cover.
  *
  * The download script wrote 79 covers into local-data/storage/covers/cloudinary/
@@ -61,5 +79,5 @@ export function getLocalCoverUrl(storyId: string): string | null {
   );
   if (!fs.existsSync(abs)) return null;
 
-  return `/storage/covers/cloudinary/${rel.split("\\").join("/")}`;
+  return absoluteBackendUrl(`/storage/covers/cloudinary/${rel.split("\\").join("/")}`);
 }

@@ -13,7 +13,7 @@
  *   - story is not yet approved (neither approvalStatus nor coverApprovalStatus === "approved")
  */
 
-import { getLocalCoverUrl } from "./localCovers";
+import { absoluteBackendUrl, getLocalCoverUrl } from "./localCovers";
 
 export interface StoryCoverShape {
   id?: string | null;
@@ -87,5 +87,5 @@ export function deriveCoverUrl(story: StoryCoverShape): string | null {
 
   // 5. Anything else (Supabase or unknown) — stream through the backend.
   if (!story.id) return null;
-  return `/api/stories/${story.id}/cover`;
+  return absoluteBackendUrl(`/api/stories/${story.id}/cover`);
 }
