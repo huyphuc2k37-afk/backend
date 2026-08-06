@@ -23,6 +23,7 @@ model User {
   provider      String    @default("google") // google | email
   emailVerified Boolean   @default(false)
   bio           String?   @db.Text
+  readingPreferences String? // JSON: {fontFamily, fontSize, lineHeight, theme}
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
@@ -60,6 +61,10 @@ model User {
   authorBadges       AuthorBadge[]
   fanClubMember      FanClubMember[]
   fanClub            FanClub?
+  fanClubActivities  FanClubActivity[]
+  affiliateEarnings  AffiliateEarning[] @relation("EarningUser")
+  affiliateReferrals AffiliateEarning[] @relation("EarningReferral")
+  affiliateLinks     AffiliateLink[] @relation("AffiliateLinkOwner")
 
   @@index([role])
   @@index([referredById])
@@ -239,6 +244,7 @@ model Story {
   ratings         Rating[]
   storyTags       StoryTag[]
   paidSuggestions PaidSuggestion[]
+  giftTransactions GiftTransaction[]
 
   @@index([authorId])
   @@index([views])
@@ -538,6 +544,9 @@ model ViewLog {
   ip        String
   userId    String?  // populated when logged in (more reliable dedup than IP)
   userAgent String?  // populated for bot filtering audit
+  fingerprintId String? // link to DeviceFingerprint
+  qualityScore   Float?  @default(0) // 0-1 score combining dwell/scroll/etc.
+  dwellTime      Int     @default(0) // seconds
   createdAt DateTime @default(now())
 
   @@index([storyId])
@@ -744,6 +753,9 @@ model AffiliateLink {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
+  user            User?    @relation("AffiliateLinkOwner", fields: [userId], references: [id], onDelete: Cascade)
+  earnings        AffiliateEarning[]
+
   @@index([userId])
   @@index([code])
   @@index([destination])
@@ -774,6 +786,10 @@ model AffiliateEarning {
   commission      Int      // Số xu hoa hồng
   description     String?
   createdAt       DateTime @default(now())
+
+  user            User?    @relation("EarningUser", fields: [userId], references: [id], onDelete: Cascade)
+  referralUser    User?    @relation("EarningReferral", fields: [referralUserId], references: [id], onDelete: SetNull)
+  link            AffiliateLink? @relation(fields: [linkId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([referralUserId])
@@ -826,6 +842,7 @@ model FanClubActivity {
   createdAt DateTime @default(now())
 
   club      FanClub  @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([clubId])
   @@index([userId])
@@ -862,6 +879,7 @@ model GiftTransaction {
   sender      User     @relation("GiftSender", fields: [senderId], references: [id])
   receiver    User     @relation("GiftReceiver", fields: [receiverId], references: [id])
   giftType    GiftType @relation(fields: [giftTypeId], references: [id])
+  story       Story?   @relation(fields: [storyId], references: [id], onDelete: SetNull)
 
   @@index([senderId])
   @@index([receiverId])

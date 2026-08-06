@@ -427,7 +427,7 @@ async function getTrendingStories(
         },
       });
     }
-  ) as Promise<Recommendation[]>;
+  ) as unknown as Promise<Recommendation[]>;
 }
 
 /**
