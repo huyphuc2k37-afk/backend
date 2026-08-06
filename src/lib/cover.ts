@@ -24,10 +24,14 @@ export interface StoryCoverShape {
 
 /** Whether the cover should be displayed at all. */
 export function isCoverVisible(story: StoryCoverShape): boolean {
-  if (!story.coverImage) return false;
-  if (story.coverApprovalStatus === "rejected") return false;
-  if (story.approvalStatus !== "approved" && story.coverApprovalStatus !== "approved") return false;
-  return true;
+  const visible = (() => {
+    if (!story.coverImage) return false;
+    if (story.coverApprovalStatus === "rejected") return false;
+    if (story.approvalStatus !== "approved" && story.coverApprovalStatus !== "approved") return false;
+    return true;
+  })();
+  console.log(`[cover.isCoverVisible] id=${story.id} approvalStatus=${story.approvalStatus} coverApprovalStatus=${story.coverApprovalStatus} coverImageLen=${story.coverImage?.length ?? 0} -> visible=${visible}`);
+  return visible;
 }
 
 /**
