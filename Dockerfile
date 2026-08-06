@@ -8,13 +8,16 @@ COPY package*.json ./
 # Copy prisma files BEFORE npm ci (needed for postinstall)
 COPY prisma ./prisma/
 
-# Install dependencies (postinstall will run prisma generate)
-RUN npm ci --omit=dev
+# Install ALL dependencies (including dev for build)
+RUN npm ci
 
 # Build TypeScript
 COPY tsconfig.json ./
 COPY src ./src/
 RUN npm run build
+
+# Remove devDependencies to slim down image
+RUN npm prune --production
 
 # Run as non-root
 RUN addgroup -S app && adduser -S app -G app
