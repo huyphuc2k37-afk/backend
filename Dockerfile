@@ -19,8 +19,11 @@ RUN npm run build
 # Remove devDependencies to slim down image
 RUN npm prune --production
 
-# Run as non-root
-RUN addgroup -S app && adduser -S app -G app
+# Run as non-root (ensure node has execute permissions)
+RUN addgroup -S app && adduser -S app -G app && \
+    chmod -R +x /app/node_modules/.bin && \
+    chown -R app:app /app
+
 USER app
 
 EXPOSE 5000
