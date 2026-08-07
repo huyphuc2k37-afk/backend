@@ -1,9 +1,5 @@
-[variables]
-NIXPACKS_NODE_VERSION = "20"
-NODE_ENV = "production"
-
 [phases.setup]
-nixPkgs = ["nodejs-20_x", "openssl", "pkg-config"]
+nixPkgs = ["nodejs_20", "openssl-3.0.13", "pkg-config"]
 
 [phases.install]
 cmds = ["npm ci --include=dev"]
