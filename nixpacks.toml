@@ -1,5 +1,5 @@
 [phases.setup]
-nixPkgs = ["nodejs_20", "openssl-3.0.13", "pkg-config"]
+nixPkgs = ["nodejs_20", "openssl", "pkg-config"]
 
 [phases.install]
 cmds = ["npm ci --include=dev"]
