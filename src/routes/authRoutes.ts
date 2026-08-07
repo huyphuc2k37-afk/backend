@@ -203,14 +203,16 @@ router.post("/sync", async (req: Request, res: Response) => {
     const clientIP = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.ip || "unknown";
     const banned = await prisma.bannedIP.findUnique({ where: { ip: clientIP } });
     if (banned) {
-      return res.status(403).json({ error: "IP của bạn đã bị chặn do spam." });
+      console.warn("[auth/sync] banned IP attempt", { ip: clientIP, reason: banned.reason });
+      return res.status(403).json({ error: "IP của bạn đã bị chặn do spam.", code: "BANNED_IP" });
     }
 
     // Verify shared secret — only NextAuth server-side can call this
     const syncSecret = req.headers["x-sync-secret"];
     const expectedSyncSecret = getAuthSyncSecret();
     if (!syncSecret || !expectedSyncSecret || syncSecret !== expectedSyncSecret) {
-      return res.status(403).json({ error: "Forbidden" });
+      console.warn("[auth/sync] bad/missing sync secret", { fromIp: clientIP });
+      return res.status(403).json({ error: "Forbidden", code: "BAD_SECRET" });
     }
 
     const { email: rawEmail, name, image } = req.body;
@@ -220,12 +222,14 @@ router.post("/sync", async (req: Request, res: Response) => {
     // Check if email is banned
     const bannedEmail = await prisma.bannedEmail.findUnique({ where: { email } });
     if (bannedEmail) {
-      return res.status(403).json({ error: "Email này đã bị chặn." });
+      console.warn("[auth/sync] banned email attempt", { email, reason: bannedEmail.reason });
+      return res.status(403).json({ error: "Email này đã bị chặn.", code: "BANNED_EMAIL" });
     }
 
     // Only allow @gmail.com for Google OAuth sync
     if (!email.endsWith("@gmail.com")) {
-      return res.status(403).json({ error: "Chỉ chấp nhận tài khoản Google có email @gmail.com." });
+      console.warn("[auth/sync] non-gmail google login attempt", { email });
+      return res.status(403).json({ error: "Chỉ chấp nhận tài khoản Google có email @gmail.com.", code: "NOT_GMAIL" });
     }
 
     let user = await prisma.user.findUnique({ where: { email } });

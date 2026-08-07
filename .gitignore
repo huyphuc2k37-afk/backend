@@ -4,3 +4,13 @@ dist/
 *.db
 *.db-journal
 backups/
+
+# Debug HTML files (one-off browser checks)
+check_ranking.html
+check_rankings.html
+rankings_check.html
+
+# Debug scripts (one-off)
+scripts/check_banned.js
+scripts/check_env.js
+scripts/diag_banned.js

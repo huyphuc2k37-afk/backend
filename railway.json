@@ -1,6 +1,0 @@
-{
-  "artifact": {
-    "type": "docker",
-    "dockerfilePath": "Dockerfile"
-  }
-}
