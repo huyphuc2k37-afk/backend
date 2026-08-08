@@ -2,6 +2,7 @@ import { Router, Response, Request } from "express";
 import prisma from "../lib/prisma";
 import { AuthRequest, authRequired } from "../middleware/auth";
 import { invalidateCache } from "../lib/cache";
+import { deriveCoverUrl } from "../lib/cover";
 
 const router = Router();
 
@@ -150,7 +151,7 @@ router.get("/pool", async (_req, res: Response) => {
       pool = await prisma.suggestionPool.create({
         data: {
           date: todayStart,
-          slots: 5,
+          slots: 10,
           stories: []
         }
       });
@@ -174,6 +175,8 @@ router.get("/pool", async (_req, res: Response) => {
             title: true,
             slug: true,
             coverImage: true,
+            approvalStatus: true,
+            coverApprovalStatus: true,
             author: { select: { id: true, name: true } },
             views: true,
             likes: true,
@@ -186,11 +189,15 @@ router.get("/pool", async (_req, res: Response) => {
     res.json({
       date: todayStart.toISOString().split("T")[0],
       slots: pool.slots,
-      stories: approvedSuggestions.map(s => ({
-        ...s.story,
-        suggestedAt: s.createdAt,
-        message: s.message
-      })),
+      stories: approvedSuggestions.map(s => {
+        const { coverImage, approvalStatus, coverApprovalStatus, ...rest } = s.story;
+        return {
+          ...rest,
+          coverUrl: deriveCoverUrl({ id: s.story.id, coverImage, approvalStatus, coverApprovalStatus }),
+          suggestedAt: s.createdAt,
+          message: s.message
+        };
+      }),
       total: approvedSuggestions.length
     });
   } catch (error) {
@@ -417,6 +424,7 @@ router.get("/boost-leaderboard", async (_req: Request, res: Response) => {
         title: true,
         slug: true,
         coverImage: true,
+        coverApprovalStatus: true,
         boostScore: true,
         boostedAt: true,
         views: true,
@@ -427,10 +435,19 @@ router.get("/boost-leaderboard", async (_req: Request, res: Response) => {
     });
 
     res.json({
-      stories: stories.map((s, i) => ({
-        rank: i + 1,
-        ...s,
-      })),
+      stories: stories.map((s, i) => {
+        const { coverImage, coverApprovalStatus, ...rest } = s;
+        return {
+          rank: i + 1,
+          ...rest,
+          coverUrl: deriveCoverUrl({
+            id: s.id,
+            coverImage,
+            approvalStatus: "approved",
+            coverApprovalStatus,
+          }),
+        };
+      }),
       total: stories.length,
     });
   } catch (error) {
