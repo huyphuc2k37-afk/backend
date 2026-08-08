@@ -256,6 +256,13 @@ model Story {
   @@index([updatedAt])
   @@index([status])
   @@index([approvalStatus])
+  // Composite indexes for common WHERE+ORDER BY combos on the homepage
+  @@index([approvalStatus, updatedAt(sort: Desc)])
+  @@index([approvalStatus, categoryId, updatedAt(sort: Desc)])
+  @@index([approvalStatus, storyOrigin, updatedAt(sort: Desc)])
+  @@index([approvalStatus, genre, updatedAt(sort: Desc)])
+  @@index([approvalStatus, featuredSlot, updatedAt(sort: Desc)])
+  @@index([approvalStatus, views(sort: Desc)])
 }
 
 // ─── Chapters ────────────────────────────────────
