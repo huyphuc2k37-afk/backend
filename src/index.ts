@@ -1,23 +1,23 @@
 import "dotenv/config";
 
 // Early startup logging - to Railway stderr/stdout
-console.log("=".repeat(60));
-console.log("[BOOT] Starting VStory Backend...");
-console.log(`[BOOT] Node version: ${process.version}`);
-console.log(`[BOOT] PORT env: ${process.env.PORT || "NOT SET"}`);
-console.log(`[BOOT] NODE_ENV: ${process.env.NODE_ENV || "NOT SET"}`);
-console.log(`[BOOT] DATABASE_URL present: ${!!process.env.DATABASE_URL}`);
-console.log(`[BOOT] Timestamp: ${new Date().toISOString()}`);
-console.log("=".repeat(60));
+process.stderr.write("=".repeat(60) + "\n");
+process.stderr.write("[BOOT] Starting VStory Backend...\n");
+process.stderr.write(`[BOOT] Node version: ${process.version}\n`);
+process.stderr.write(`[BOOT] PORT env: ${process.env.PORT || "NOT SET"}\n`);
+process.stderr.write(`[BOOT] NODE_ENV: ${process.env.NODE_ENV || "NOT SET"}\n`);
+process.stderr.write(`[BOOT] DATABASE_URL present: ${!!process.env.DATABASE_URL}\n`);
+process.stderr.write(`[BOOT] Timestamp: ${new Date().toISOString()}\n`);
+process.stderr.write("=".repeat(60) + "\n");
 
 // Catch unhandled errors early
 process.on("uncaughtException", (err) => {
-  console.error("[FATAL] Uncaught Exception:", err);
-  console.error("[FATAL] Stack:", err.stack);
+  process.stderr.write("[FATAL] Uncaught Exception: " + err + "\n");
+  process.stderr.write("[FATAL] Stack: " + (err.stack || "") + "\n");
   process.exit(1);
 });
 process.on("unhandledRejection", (reason) => {
-  console.error("[FATAL] Unhandled Rejection:", reason);
+  process.stderr.write("[FATAL] Unhandled Rejection: " + reason + "\n");
 });
 
 import * as Sentry from "@sentry/node";
