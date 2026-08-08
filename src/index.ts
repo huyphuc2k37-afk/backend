@@ -1,4 +1,25 @@
 import "dotenv/config";
+
+// Early startup logging - to Railway stderr/stdout
+console.log("=".repeat(60));
+console.log("[BOOT] Starting VStory Backend...");
+console.log(`[BOOT] Node version: ${process.version}`);
+console.log(`[BOOT] PORT env: ${process.env.PORT || "NOT SET"}`);
+console.log(`[BOOT] NODE_ENV: ${process.env.NODE_ENV || "NOT SET"}`);
+console.log(`[BOOT] DATABASE_URL present: ${!!process.env.DATABASE_URL}`);
+console.log(`[BOOT] Timestamp: ${new Date().toISOString()}`);
+console.log("=".repeat(60));
+
+// Catch unhandled errors early
+process.on("uncaughtException", (err) => {
+  console.error("[FATAL] Uncaught Exception:", err);
+  console.error("[FATAL] Stack:", err.stack);
+  process.exit(1);
+});
+process.on("unhandledRejection", (reason) => {
+  console.error("[FATAL] Unhandled Rejection:", reason);
+});
+
 import * as Sentry from "@sentry/node";
 import express from "express";
 import cors from "cors";
