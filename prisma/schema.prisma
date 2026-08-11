@@ -615,15 +615,20 @@ model AdPlacement {
   priority        Int      @default(0)
   isActive        Boolean  @default(true)
   // B7: custom banner (shop thủ công) fields
-  customImageUrl  String?  // URL ảnh banner
+  customImageUrl  String?  // URL ảnh banner PC/Desktop
+  customImageMobileUrl String? // URL ảnh banner Mobile
   customVideoUrl  String?  // URL video banner (optional)
   clickUrl        String?  // URL khi click banner → shop
   advertiserName  String?  // Tên shop / nhà quảng cáo
   advertiserPhone String?  // SĐT liên hệ
+  advertiserEmail String?  // Email liên hệ
   monthlyPrice    Int?     // Giá/tháng (VND), 500000 = 500k
   startDate       DateTime? // Ngày bắt đầu hiển thị
   endDate         DateTime? // Ngày kết thúc
   paidUntil       DateTime? // Đã thanh toán đến ngày này
+  clickCount      Int      @default(0) // Tổng lượt click
+  impressionCount Int      @default(0) // Tổng lượt hiển thị
+  isOpenNewTab    Boolean  @default(true) // Mở link tab mới
   status          String   @default("network") // network | custom | expired
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -743,7 +748,7 @@ model AuthorLevel {
   minStories  Int    @default(0)
   minEarnings Int    @default(0)
   createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  updatedAt   DateTime @default(now()) @updatedAt
 }
 
 // ─── Affiliate Links (Liên kết_affiliate) ──────────
@@ -960,7 +965,7 @@ model RealtimeViewStats {
 model MonthlyViewStats {
   id        String   @id @default(cuid())
   storyId   String
-  yearMonth String   // YYYY-MM format
+  yearMonth String   @default("") // YYYY-MM format
   views     Int      @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

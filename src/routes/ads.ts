@@ -314,8 +314,6 @@ router.put("/placements/:location/custom", authRequired, async (req: AuthRequest
 
     // Invalidate cache
     invalidateCache("ads:active_placements");
-    const { invalidateCache: invalidate } = await import("../lib/cache");
-    invalidate("ads:active_placements");
 
     res.json({ success: true, placement });
   } catch (error) {
@@ -353,12 +351,32 @@ router.delete("/placements/:location/custom", authRequired, async (req: AuthRequ
       },
     });
 
-    const { invalidateCache: invalidate } = await import("../lib/cache");
-    invalidate("ads:active_placements");
+    invalidateCache("ads:active_placements");
 
     res.json({ success: true });
   } catch (error) {
     console.error("[B7] Error deleting custom banner:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ─── POST /api/ads/click/:location — Record a banner click ──────────────────
+router.post("/click/:location", async (req, res: Response) => {
+  try {
+    const { location } = req.params;
+    const validLocations = ["banner_top", "banner_sidebar", "banner_footer", "in_content"];
+    if (!validLocations.includes(location)) {
+      return res.status(400).json({ error: "Invalid placement location" });
+    }
+
+    await prisma.adPlacement.updateMany({
+      where: { location, status: "custom" },
+      data: { clickCount: { increment: 1 } },
+    });
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error("[Ads] Error recording click:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -377,6 +395,7 @@ router.get("/banners", async (_req, res: Response) => {
       select: {
         location: true,
         customImageUrl: true,
+        customImageMobileUrl: true,
         customVideoUrl: true,
         clickUrl: true,
         advertiserName: true,
@@ -388,6 +407,170 @@ router.get("/banners", async (_req, res: Response) => {
     res.json({ banners });
   } catch (error) {
     console.error("[B7] Error fetching banners:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ─── B7: Admin CRUD for banners ────────────────────────────────────────
+
+// GET /api/admin/ads/banners — List all banners (active/inactive/expired)
+router.get("/admin/ads/banners", authRequired, async (req: AuthRequest, res: Response) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { email: req.user!.email },
+      select: { role: true },
+    });
+    if (!requireAdmin(user?.role)) {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+
+    const banners = await prisma.adPlacement.findMany({
+      orderBy: { location: "asc" },
+      select: {
+        id: true,
+        location: true,
+        adNetwork: true,
+        isActive: true,
+        customImageUrl: true,
+        customImageMobileUrl: true,
+        customVideoUrl: true,
+        clickUrl: true,
+        advertiserName: true,
+        advertiserPhone: true,
+        advertiserEmail: true,
+        monthlyPrice: true,
+        startDate: true,
+        endDate: true,
+        paidUntil: true,
+        clickCount: true,
+        impressionCount: true,
+        isOpenNewTab: true,
+        status: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    res.json({ banners });
+  } catch (error) {
+    console.error("[B7] Error listing banners:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// PATCH /api/admin/ads/banners/:location — Update/create banner config
+router.patch("/admin/ads/banners/:location", authRequired, async (req: AuthRequest, res: Response) => {
+  try {
+    const { location } = req.params;
+    if (!B7_VALID_LOCATIONS.includes(location)) {
+      return res.status(400).json({ error: "Invalid location" });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { email: req.user!.email },
+      select: { role: true, id: true },
+    });
+    if (!requireAdmin(user?.role)) {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+
+    const {
+      customImageUrl,
+      customImageMobileUrl,
+      clickUrl,
+      advertiserName,
+      advertiserPhone,
+      advertiserEmail,
+      monthlyPrice,
+      startDate,
+      endDate,
+      paidUntil,
+      isOpenNewTab,
+      isActive,
+    } = req.body;
+
+    // Validate at least one image
+    if ((!customImageUrl || !customImageUrl.trim()) && (!customImageMobileUrl || !customImageMobileUrl.trim())) {
+      return res.status(400).json({ error: "Cần ít nhất 1 ảnh banner (PC hoặc Mobile)" });
+    }
+    if (!clickUrl || !clickUrl.trim()) {
+      return res.status(400).json({ error: "clickUrl là bắt buộc" });
+    }
+
+    const data: Record<string, unknown> = {
+      adNetwork: "custom",
+      adUnitId: null,
+      status: "custom",
+    };
+
+    if (customImageUrl !== undefined) data.customImageUrl = customImageUrl.trim() || null;
+    if (customImageMobileUrl !== undefined) data.customImageMobileUrl = customImageMobileUrl.trim() || null;
+    if (clickUrl !== undefined) data.clickUrl = clickUrl.trim();
+    if (advertiserName !== undefined) data.advertiserName = advertiserName?.trim() || null;
+    if (advertiserPhone !== undefined) data.advertiserPhone = advertiserPhone?.trim() || null;
+    if (advertiserEmail !== undefined) data.advertiserEmail = advertiserEmail?.trim() || null;
+    if (monthlyPrice !== undefined) data.monthlyPrice = monthlyPrice;
+    if (isOpenNewTab !== undefined) data.isOpenNewTab = isOpenNewTab;
+    if (isActive !== undefined) data.isActive = isActive;
+    if (startDate !== undefined) data.startDate = startDate ? new Date(startDate) : null;
+    if (endDate !== undefined) data.endDate = endDate ? new Date(endDate) : null;
+    if (paidUntil !== undefined) data.paidUntil = paidUntil ? new Date(paidUntil) : null;
+
+    const placement = await prisma.adPlacement.upsert({
+      where: { location },
+      create: { location, ...data } as Parameters<typeof prisma.adPlacement.create>[0]["data"],
+      update: data as Parameters<typeof prisma.adPlacement.update>[0]["data"],
+    });
+
+    invalidateCache("ads:active_placements");
+
+    res.json({ success: true, banner: placement });
+  } catch (error) {
+    console.error("[B7] Error updating banner:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// DELETE /api/admin/ads/banners/:location — Remove banner (back to network)
+router.delete("/admin/ads/banners/:location", authRequired, async (req: AuthRequest, res: Response) => {
+  try {
+    const { location } = req.params;
+    if (!B7_VALID_LOCATIONS.includes(location)) {
+      return res.status(400).json({ error: "Invalid location" });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { email: req.user!.email },
+      select: { role: true },
+    });
+    if (!requireAdmin(user?.role)) {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+
+    await prisma.adPlacement.update({
+      where: { location },
+      data: {
+        status: "network",
+        isActive: true,
+        customImageUrl: null,
+        customImageMobileUrl: null,
+        customVideoUrl: null,
+        clickUrl: null,
+        advertiserName: null,
+        advertiserPhone: null,
+        advertiserEmail: null,
+        monthlyPrice: null,
+        startDate: null,
+        endDate: null,
+        paidUntil: null,
+      },
+    });
+
+    invalidateCache("ads:active_placements");
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error("[B7] Error deleting banner:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });
