@@ -834,4 +834,176 @@ router.get("/overview", authRequired, adminRequired, async (req: AuthRequest, re
   }
 });
 
+// ─── GET /api/revenue/dashboard/by-source — Doanh thu phân theo nguồn ─
+router.get("/by-source", authRequired, adminRequired, async (req: AuthRequest, res: Response) => {
+  try {
+    const period = (req.query.period as string) || "all";
+    let startDate: Date | undefined;
+
+    if (period === "30d") {
+      startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    } else if (period === "90d") {
+      startDate = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+    } else if (period === "365d") {
+      startDate = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
+    }
+
+    const dateFilter = startDate ? { createdAt: { gte: startDate } } : {};
+    const txFilter = startDate ? { transactionDate: { gte: startDate } } : {};
+
+    const [
+      depositAgg,
+      purchaseAgg,
+      tipAgg,
+      adRevenueAgg,
+      customBannerAgg,
+      rewardAdAgg,
+      adminCreditsAgg,
+    ] = await Promise.all([
+      // 1. Nạp xu (user deposits)
+      prisma.deposit.aggregate({
+        where: { status: "approved", ...dateFilter },
+        _sum: { amount: true, coins: true },
+        _count: true,
+      }),
+      // 2. Mua chương (content purchases)
+      prisma.platformEarning.aggregate({
+        where: { type: "purchase", ...dateFilter },
+        _sum: { grossAmount: true, authorAmount: true, platformAmount: true },
+        _count: true,
+      }),
+      // 3. Tặng tác giả (tips)
+      prisma.platformEarning.aggregate({
+        where: { type: "tip", ...dateFilter },
+        _sum: { grossAmount: true, authorAmount: true, platformAmount: true },
+        _count: true,
+      }),
+      // 4. Banner ads (Google AdSense)
+      prisma.adRevenue.aggregate({
+        where: { type: "banner_impression", source: "google_adsense", ...txFilter },
+        _sum: { platformShare: true },
+        _count: true,
+      }),
+      // 5. Custom banner (quảng cáo custom)
+      prisma.adRevenue.aggregate({
+        where: { type: "custom_banner", ...txFilter },
+        _sum: { amount: true, platformShare: true },
+        _count: true,
+      }),
+      // 6. Reward ads (xuất cho user xem quảng cáo)
+      prisma.adRevenue.aggregate({
+        where: { type: "reward_ad", ...txFilter },
+        _sum: { amount: true },
+        _count: true,
+      }),
+      // 7. Admin cộng xu
+      prisma.adminCoinCredit.aggregate({
+        where: dateFilter,
+        _sum: { amount: true },
+        _count: true,
+      }),
+    ]);
+
+    const depositsVnd = Number(depositAgg._sum.amount) || 0;
+    const depositsCoins = Number(depositAgg._sum.coins) || 0;
+    const purchasesGross = Number(purchaseAgg._sum.grossAmount) || 0;
+    const tipsGross = Number(tipAgg._sum.grossAmount) || 0;
+    const bannerRevenue = Number(adRevenueAgg._sum.platformShare) || 0;
+    const customBannerRevenue = Number(customBannerAgg._sum.platformShare) || 0;
+    const rewardAdsCost = Number(rewardAdAgg._sum.amount) || 0;
+    const adminCreditsTotal = Number(adminCreditsAgg._sum.amount) || 0;
+
+    const totalPlatformRevenue =
+      depositsVnd +
+      purchasesGross +
+      tipsGross +
+      bannerRevenue +
+      customBannerRevenue;
+
+    const sources = [
+      {
+        key: "deposits",
+        label: "Nạp xu",
+        icon: "deposit",
+        gross: depositsVnd,
+        detail: `${depositsCoins} xu đã nạp`,
+        count: depositAgg._count || 0,
+        percentage: totalPlatformRevenue > 0 ? Math.round((depositsVnd / totalPlatformRevenue) * 100) : 0,
+      },
+      {
+        key: "content_purchases",
+        label: "Mua chương",
+        icon: "purchase",
+        gross: purchasesGross,
+        detail: `Platform: ${Number(purchaseAgg._sum.platformAmount) || 0} xu`,
+        count: purchaseAgg._count || 0,
+        percentage: totalPlatformRevenue > 0 ? Math.round((purchasesGross / totalPlatformRevenue) * 100) : 0,
+      },
+      {
+        key: "tips",
+        label: "Tặng tác giả",
+        icon: "gift",
+        gross: tipsGross,
+        detail: `Platform: ${Number(tipAgg._sum.platformAmount) || 0} xu`,
+        count: tipAgg._count || 0,
+        percentage: totalPlatformRevenue > 0 ? Math.round((tipsGross / totalPlatformRevenue) * 100) : 0,
+      },
+      {
+        key: "banner_ads",
+        label: "Banner Ads (AdSense)",
+        icon: "ad",
+        gross: bannerRevenue,
+        detail: `${adRevenueAgg._count || 0} impressions`,
+        count: adRevenueAgg._count || 0,
+        percentage: totalPlatformRevenue > 0 ? Math.round((bannerRevenue / totalPlatformRevenue) * 100) : 0,
+      },
+      {
+        key: "custom_banners",
+        label: "Custom Banner",
+        icon: "custom_ad",
+        gross: customBannerRevenue,
+        detail: `${customBannerAgg._count || 0} campaigns`,
+        count: customBannerAgg._count || 0,
+        percentage: totalPlatformRevenue > 0 ? Math.round((customBannerRevenue / totalPlatformRevenue) * 100) : 0,
+      },
+      {
+        key: "reward_ads",
+        label: "Reward Ads",
+        icon: "reward",
+        gross: rewardAdsCost,
+        detail: `${rewardAdAgg._count || 0} lượt xem (chi phí trả cho user)`,
+        count: rewardAdAgg._count || 0,
+        percentage: 0,
+        isCost: true,
+      },
+      {
+        key: "admin_credits",
+        label: "Admin cộng xu",
+        icon: "admin",
+        gross: adminCreditsTotal,
+        detail: `${adminCreditsAgg._count || 0} lần cộng`,
+        count: adminCreditsAgg._count || 0,
+        percentage: 0,
+        isCost: true,
+      },
+    ];
+
+    res.json({
+      period,
+      periodLabel: period === "all" ? "Tất cả thời gian" : period,
+      totalPlatformRevenue,
+      totalUserDeposits: depositsVnd,
+      totalUserCoins: depositsCoins,
+      totalContentSpending: purchasesGross + tipsGross,
+      totalAdRevenue: bannerRevenue + customBannerRevenue,
+      totalAdminCost: adminCreditsTotal,
+      totalRewardCost: rewardAdsCost,
+      sources,
+    });
+  } catch (error) {
+    console.error("Error fetching revenue by source:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 export default router;

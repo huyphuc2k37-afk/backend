@@ -298,8 +298,19 @@ router.post("/users/:id/adjust-coins", authRequired, adminRequired, async (req: 
       throw txError;
     }
 
-    // Record admin credit as AuthorEarning for audit trail
+    // Record admin credit for audit trail
     if (coins > 0) {
+      try {
+        await prisma.adminCoinCredit.create({
+          data: {
+            adminId: req.adminUser!.id,
+            authorId: updated.id,
+            amount: coins,
+            reason: reason || "Không có lý do",
+          },
+        });
+      } catch {}
+
       await prisma.authorEarning.create({
         data: {
           type: "admin",
@@ -309,6 +320,25 @@ router.post("/users/:id/adjust-coins", authRequired, adminRequired, async (req: 
           chapterTitle: reason || "Không có lý do",
         },
       }).catch(() => {});
+
+      // Log admin action
+      try {
+        const { logAdminAction } = await import("../lib/adminLogger");
+        logAdminAction(req.adminUser!.id, "credit_coins", "user", updated.id, {
+          amount: coins,
+          reason,
+          newBalance: updated.coinBalance,
+        }, req);
+      } catch {}
+    } else if (coins < 0) {
+      try {
+        const { logAdminAction } = await import("../lib/adminLogger");
+        logAdminAction(req.adminUser!.id, "deduct_coins", "user", updated.id, {
+          amount: Math.abs(coins),
+          reason,
+          newBalance: updated.coinBalance,
+        }, req);
+      } catch {}
     }
 
     // Gửi thông báo cho user

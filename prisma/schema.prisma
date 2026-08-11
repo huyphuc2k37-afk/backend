@@ -66,6 +66,12 @@ model User {
   affiliateReferrals AffiliateEarning[] @relation("EarningReferral")
   affiliateLinks     AffiliateLink[] @relation("AffiliateLinkOwner")
 
+  // ── Admin Audit Log ──
+  adminActions      AdminActionLog[] @relation("ActionAdmin")
+  // ── Admin Coin Credit ──
+  coinCreditsGiven AdminCoinCredit[] @relation("CreditAdmin")
+  coinCreditsReceived AdminCoinCredit[] @relation("CreditAuthor")
+
   @@index([role])
   @@index([referredById])
 }
@@ -1035,4 +1041,68 @@ model QuestProgress {
 
   @@unique([userId, questId])
   @@index([userId])
+}
+
+// ─── Admin Action Log (Nhật ký hành động admin) ────────────
+model AdminActionLog {
+  id          String   @id @default(cuid())
+  adminId     String
+  admin       User     @relation("ActionAdmin", fields: [adminId], references: [id])
+  action      String   // credit_coins | reject_deposit | approve_withdrawal | update_banner | ...
+  targetType  String   // user | author | story | banner | deposit | withdrawal | ad_placement
+  targetId    String
+  details     Json?    // { amount, reason, before, after, ... }
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+
+  @@index([adminId, createdAt])
+  @@index([targetType, targetId])
+  @@index([action, createdAt])
+  @@index([createdAt])
+}
+
+// ─── Admin Coin Credit (Cộng xu thủ công cho tác giả) ──────
+model AdminCoinCredit {
+  id         String   @id @default(cuid())
+  adminId    String
+  admin      User     @relation("CreditAdmin", fields: [adminId], references: [id])
+  authorId   String
+  amount     Int      // Số xu cộng
+  reason     String   @db.Text // Lý do cộng xu
+  createdAt  DateTime @default(now())
+
+  author     User     @relation("CreditAuthor", fields: [authorId], references: [id])
+
+  @@index([adminId, createdAt])
+  @@index([authorId, createdAt])
+}
+
+// ─── Ad Revenue (Doanh thu quảng cáo) ───────────────────────
+model AdRevenue {
+  id              String   @id @default(cuid())
+  type            String   // banner_impression | custom_banner | reward_ad | google_adsense
+  placement       String   // banner_top | banner_sidebar | banner_footer | in_content | reward_video
+  amount          Int      // Số xu hoặc VND (tùy currency)
+  currency        String   @default("xu") // xu | vnd
+  source          String   // google_adsense | custom_shop | reward_video
+  storyId         String?
+  chapterId       String?
+  userId          String?
+  // custom_banner fields
+  advertiserName  String?
+  campaignName    String?
+  // google adsense fields
+  adUnitId        String?
+  revenueShare    Float?   // Tỉ lệ platform nhận
+  platformShare   Int?     // Phần platform
+  authorShare     Int?     // Phần tác giả
+  transactionDate DateTime @default(now())
+  createdAt       DateTime @default(now())
+
+  @@index([type, transactionDate])
+  @@index([placement, transactionDate])
+  @@index([source, transactionDate])
+  @@index([storyId])
+  @@index([createdAt])
 }
