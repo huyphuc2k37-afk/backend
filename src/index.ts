@@ -247,6 +247,7 @@ app.use("/api/auth/verify", authLimiter);
 // Routes
 const largeBodyParser = express.json({ limit: "10mb" });
 app.use("/api/manage", largeBodyParser, storyManageRouter);
+app.use("/api/admin/ads", largeBodyParser, adsRouter); // Admin banner CRUD (mounted twice to expose under /api/admin/ads too)
 
 app.use("/api/stories", storiesRouter);
 app.use("/api/stories", storyDetailRouter);
@@ -271,6 +272,7 @@ app.use("/api/tags", tagsRouter);
 app.use("/api/messages", messagesRouter);
 app.use("/api/quests", questsRouter);
 app.use("/api/ads", adsRouter);
+app.use("/api/admin/ads", adsRouter); // Admin banner CRUD (mounted twice to expose under /api/admin/ads too)
 app.use("/api/affiliate", affiliateRouter);
 app.use("/api/gifts", giftsRouter);
 app.use("/api/fanclub", fanClubRouter);

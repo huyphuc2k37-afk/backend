@@ -413,9 +413,10 @@ router.get("/banners", async (_req, res: Response) => {
 });
 
 // ─── B7: Admin CRUD for banners ────────────────────────────────────────
+// (Note: routes mounted separately under /api/admin/ads — see backend/src/index.ts)
 
-// GET /api/admin/ads/banners — List all banners (active/inactive/expired)
-router.get("/admin/ads/banners", authRequired, async (req: AuthRequest, res: Response) => {
+// GET /api/admin/ads/all — List all banners (active/inactive/expired)
+router.get("/all", authRequired, async (req: AuthRequest, res: Response) => {
   try {
     const user = await prisma.user.findUnique({
       where: { email: req.user!.email },
@@ -459,8 +460,8 @@ router.get("/admin/ads/banners", authRequired, async (req: AuthRequest, res: Res
   }
 });
 
-// PATCH /api/admin/ads/banners/:location — Update/create banner config
-router.patch("/admin/ads/banners/:location", authRequired, async (req: AuthRequest, res: Response) => {
+// PATCH /api/admin/ads/:location — Update/create banner config
+router.patch("/:location", authRequired, async (req: AuthRequest, res: Response) => {
   try {
     const { location } = req.params;
     if (!B7_VALID_LOCATIONS.includes(location)) {
@@ -532,8 +533,8 @@ router.patch("/admin/ads/banners/:location", authRequired, async (req: AuthReque
   }
 });
 
-// DELETE /api/admin/ads/banners/:location — Remove banner (back to network)
-router.delete("/admin/ads/banners/:location", authRequired, async (req: AuthRequest, res: Response) => {
+// DELETE /api/admin/ads/:location — Remove banner (back to network)
+router.delete("/:location", authRequired, async (req: AuthRequest, res: Response) => {
   try {
     const { location } = req.params;
     if (!B7_VALID_LOCATIONS.includes(location)) {
@@ -576,8 +577,8 @@ router.delete("/admin/ads/banners/:location", authRequired, async (req: AuthRequ
   }
 });
 
-// B8: Upload banner image (multipart/form-data)
-router.post("/admin/ads/banners/upload", authRequired, async (req: AuthRequest, res: Response) => {
+// POST /api/admin/ads/upload — Upload banner image (base64)
+router.post("/upload", authRequired, async (req: AuthRequest, res: Response) => {
   try {
     const { location, variant } = req.body as { location?: string; variant?: string };
 
