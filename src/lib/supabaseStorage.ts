@@ -85,6 +85,55 @@ export async function uploadCoverImage(
 }
 
 /**
+ * Upload a base64 data-URI banner image to Supabase Storage.
+ * Returns the public URL on success, or null if storage is disabled / upload fails.
+ *
+ * @param dataUri  - base64 data-URI of the image
+ * @param location - ad placement location (used as folder path)
+ * @param variant  - "pc" or "mobile"
+ */
+export async function uploadBannerImage(
+  dataUri: string,
+  location: string,
+  variant: "pc" | "mobile"
+): Promise<string | null> {
+  const client = getStorageClient();
+  if (!client) return null;
+
+  const match = dataUri.match(/^data:(image\/[a-zA-Z+]+);base64,(.+)$/);
+  if (!match) return null;
+
+  const [, mimeType, base64Data] = match;
+  const buffer = Buffer.from(base64Data, "base64");
+
+  const ext =
+    mimeType === "image/webp"
+      ? "webp"
+      : mimeType === "image/png"
+        ? "png"
+        : mimeType === "image/gif"
+          ? "gif"
+          : "jpg";
+
+  const hash = crypto.createHash("md5").update(buffer).digest("hex").slice(0, 8);
+  const path = `banners/${location}/${variant}_${hash}.${ext}`;
+
+  const { error } = await client.storage.from(BUCKET).upload(path, buffer, {
+    contentType: mimeType,
+    upsert: true,
+    cacheControl: "public, max-age=86400",
+  });
+
+  if (error) {
+    console.error("Supabase Storage upload error:", error.message);
+    return null;
+  }
+
+  const { data } = client.storage.from(BUCKET).getPublicUrl(path);
+  return data?.publicUrl || null;
+}
+
+/**
  * Delete all cover images for a story from Supabase Storage.
  */
 export async function deleteCoverImages(storyId: string): Promise<void> {

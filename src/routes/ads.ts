@@ -1,6 +1,7 @@
 import { Router, Response } from "express";
 import prisma from "../lib/prisma";
 import { AuthRequest, authRequired, authOptional } from "../middleware/auth";
+import { uploadBannerImage } from "../lib/supabaseStorage";
 import {
   getActivePlacements,
   getPlacementConfig,
@@ -571,6 +572,43 @@ router.delete("/admin/ads/banners/:location", authRequired, async (req: AuthRequ
     res.json({ success: true });
   } catch (error) {
     console.error("[B7] Error deleting banner:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// B8: Upload banner image (multipart/form-data)
+router.post("/admin/ads/banners/upload", authRequired, async (req: AuthRequest, res: Response) => {
+  try {
+    const { location, variant } = req.body as { location?: string; variant?: string };
+
+    if (!location || !variant || !["pc", "mobile"].includes(variant)) {
+      res.status(400).json({ error: "Missing or invalid location / variant" });
+      return;
+    }
+
+    const existingPlacements = getActivePlacements();
+    const placement = existingPlacements.find((p) => p.location === location);
+    if (!placement) {
+      res.status(404).json({ error: "Placement not found" });
+      return;
+    }
+
+    // Expect base64 data-URI in the body
+    const { imageData } = req.body as { imageData?: string };
+    if (!imageData || typeof imageData !== "string" || !imageData.startsWith("data:image/")) {
+      res.status(400).json({ error: "Missing or invalid imageData (must be base64 data-URI)" });
+      return;
+    }
+
+    const url = await uploadBannerImage(imageData, location, variant);
+    if (!url) {
+      res.status(500).json({ error: "Upload failed — storage may be unavailable" });
+      return;
+    }
+
+    res.json({ url });
+  } catch (error) {
+    console.error("[B8] Error uploading banner image:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });
