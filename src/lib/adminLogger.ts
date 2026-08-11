@@ -1,3 +1,4 @@
+import express from "express";
 import prisma from "../lib/prisma";
 
 type AdminAction =
@@ -29,13 +30,8 @@ type TargetType =
   | "announcement"
   | "story";
 
-interface LogDetails {
-  amount?: number;
-  reason?: string;
-  before?: Record<string, unknown>;
-  after?: Record<string, unknown>;
-  [key: string]: unknown;
-}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type LogDetails = Record<string, any>;
 
 export async function logAdminAction(
   adminId: string,
