@@ -586,7 +586,7 @@ router.post("/admin/ads/banners/upload", authRequired, async (req: AuthRequest, 
       return;
     }
 
-    const existingPlacements = getActivePlacements();
+    const existingPlacements = await getActivePlacements();
     const placement = existingPlacements.find((p) => p.location === location);
     if (!placement) {
       res.status(404).json({ error: "Placement not found" });
@@ -600,7 +600,7 @@ router.post("/admin/ads/banners/upload", authRequired, async (req: AuthRequest, 
       return;
     }
 
-    const url = await uploadBannerImage(imageData, location, variant);
+    const url = await uploadBannerImage(imageData, location, variant as "pc" | "mobile");
     if (!url) {
       res.status(500).json({ error: "Upload failed — storage may be unavailable" });
       return;
