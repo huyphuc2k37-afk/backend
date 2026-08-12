@@ -391,7 +391,11 @@ router.get("/banners", async (_req, res: Response) => {
       where: {
         isActive: true,
         status: "custom",
-        paidUntil: { gte: now },
+        // Only enforce paidUntil when explicitly set; banners without a paid date are still shown
+        OR: [
+          { paidUntil: null },
+          { paidUntil: { gte: now } },
+        ],
       },
       select: {
         location: true,
@@ -516,7 +520,9 @@ router.patch("/:location", authRequired, async (req: AuthRequest, res: Response)
     if (isActive !== undefined) data.isActive = isActive;
     if (startDate !== undefined) data.startDate = startDate ? new Date(startDate) : null;
     if (endDate !== undefined) data.endDate = endDate ? new Date(endDate) : null;
-    if (paidUntil !== undefined) data.paidUntil = paidUntil ? new Date(paidUntil) : null;
+    if (paidUntil !== undefined) {
+      data.paidUntil = paidUntil ? new Date(paidUntil) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    }
 
     const placement = await prisma.adPlacement.upsert({
       where: { location },
