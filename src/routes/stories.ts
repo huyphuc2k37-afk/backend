@@ -13,7 +13,9 @@ const router = Router();
 type CoverCacheEntry = { mime: string; buffer: Buffer; etag: string; ts: number };
 const coverCache = new Map<string, CoverCacheEntry>();
 const COVER_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
-const COVER_CACHE_MAX = 2000; // ~2000 covers × 200KB avg ≈ 400MB worst case
+// Capped to 500 entries (~100 MB worst case at 200 KB/cover) so the cache
+// cannot exhaust Railway Hobby plan RAM (~512 MB–1 GB).
+const COVER_CACHE_MAX = 500;
 function pruneCoverCache() {
   const now = Date.now();
   for (const [k, v] of coverCache) {
@@ -164,7 +166,7 @@ router.get("/", async (req: Request, res: Response) => {
       };
     });
 
-    res.set("Cache-Control", "public, max-age=60, stale-while-revalidate=120");
+    res.set("Cache-Control", "public, max-age=300, stale-while-revalidate=3600");
     res.json(result);
   } catch (error) {
     console.error("Error fetching stories:", error);
