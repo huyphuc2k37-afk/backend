@@ -119,7 +119,7 @@ export async function notifyNewDeposit(deposit: {
 }) {
   const userName = deposit.user?.name || "N/A";
   const userEmail = deposit.user?.email || "N/A";
-  const methodLabel = deposit.method === "zalopay" ? "ZaloPay" : "Agribank";
+  const methodLabel = deposit.method === "zalopay" ? "ZaloPay" : "Eximbank";
 
   const text =
     `💰 <b>YÊU CẦU NẠP XU MỚI</b>\n\n` +
