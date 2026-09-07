@@ -307,7 +307,8 @@ router.post("/boost/:storyId", authRequired, async (req: AuthRequest, res: Respo
     }
 
     // Atomic: deduct coins, record boost, increment story.boostScore
-    const [, updatedStory] = await prisma.$transaction([
+    // Transaction array order: [user, paidSuggestion, story] — index 2 is the updated Story.
+    const [, , updatedStory] = await prisma.$transaction([
       prisma.user.update({
         where: { id: user.id },
         data: { coinBalance: { decrement: COINS_PER_SUGGESTION } },
