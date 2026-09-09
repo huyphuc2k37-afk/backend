@@ -206,6 +206,18 @@ const CUID_PATTERN = /^[a-z0-9]{20,32}$/i;
 
 // ─── Process callback from Telegram button click ─
 async function handleCallback(callbackQueryId: string, data: string, chatId: number, messageId: number) {
+  // ── Test callbacks ──────────────────────────────────────────────────────────
+  if (data === "test_callback_ok" || data === "test_callback_fail") {
+    _testCallbackReceived = true;
+    _testCallbackData = data;
+    _testCallbackTime = Date.now();
+    await answerCallbackQuery(callbackQueryId, `✅ Test callback nhận được: ${data}`);
+    await editMessageText(chatId, messageId,
+      `🧪 <b>TEST THÀNH CÔNG</b>\n\nCallback: <code>${data}</code>\nTime: ${new Date().toISOString()}\n\n✅ Telegram ↔ Railway đang hoạt động!`
+    );
+    return;
+  }
+
   // Parse action: approve_deposit_<id>, reject_deposit_<id>, approve_withdraw_<id>, reject_withdraw_<id>
   const match = data.match(/^(approve|reject)_(deposit|withdraw)_(.+)$/);
   if (!match) {
@@ -434,8 +446,23 @@ async function handleCallback(callbackQueryId: string, data: string, chatId: num
 // Uses a WeakRef-like stamp so that if the module is re-imported (new instance),
 // the OLD instance won't conflict with the NEW one.
 let _pollingStamp: string | null = null;
-let pollingActive = false;
-let lastUpdateId = 0;
+export let pollingActive = false;
+export let lastUpdateId = 0;
+
+// Test callback state (used by /api/_debug/telegram/test)
+let _testCallbackReceived = false;
+let _testCallbackData = "";
+let _testCallbackTime = 0;
+
+export function getTestCallbackState() {
+  return { received: _testCallbackReceived, data: _testCallbackData, time: _testCallbackTime };
+}
+
+export function resetTestCallback() {
+  _testCallbackReceived = false;
+  _testCallbackData = "";
+  _testCallbackTime = 0;
+}
 
 export function startTelegramPolling() {
   if (!BOT_TOKEN || !CHAT_ID) {
@@ -451,7 +478,7 @@ export function startTelegramPolling() {
   const stamp = `${Date.now()}_${Math.random()}`;
   _pollingStamp = stamp;
   pollingActive = true;
-  console.log("[Telegram] Bot polling started.");
+  console.log(`[Telegram] Bot polling started. stamp=${stamp} pid=${process.pid} chat=${CHAT_ID}`);
 
   const poll = async () => {
     while (pollingActive && _pollingStamp === stamp) {
@@ -478,6 +505,8 @@ export function startTelegramPolling() {
               const cq = update.callback_query;
               const chatId = cq.message?.chat?.id;
               const messageId = cq.message?.message_id;
+
+              console.log(`[Telegram] callback_query received: data="${cq.data}" from @${cq.from?.username} chat=${chatId} msg=${messageId}`);
 
               if (chatId && messageId && cq.data) {
                 handleCallback(cq.id, cq.data, chatId, messageId).catch((err) =>

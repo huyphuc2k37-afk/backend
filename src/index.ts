@@ -64,7 +64,7 @@ import viewQualityRouter from "./routes/viewQuality";
 import metricsRouter from "./routes/metrics";
 import viewStatsRouter from "./routes/viewStats";
 import readHistoryRouter from "./routes/readHistory";
-import { startTelegramPolling } from "./lib/telegram";
+import { startTelegramPolling, stopTelegramPolling, pollingActive, lastUpdateId, sendTelegramMessage, getTestCallbackState, resetTestCallback } from "./lib/telegram";
 import {
   maintenanceMiddleware,
   maintenanceStatusHandler,
@@ -220,6 +220,52 @@ app.get("/api/_env/maintenance", (_req, res) => {
   });
 });
 
+// ─── Telegram test state (in-memory, from telegram.ts) ──────────────
+
+// ─── Debug endpoints ──────────────────────────────
+
+// Debug Telegram polling status
+app.get("/api/_debug/telegram", (_req, res) => {
+  res.json({
+    pollingActive,
+    lastUpdateId,
+    botTokenSet: !!(process.env.TELEGRAM_BOT_TOKEN),
+    chatIdSet: !!(process.env.TELEGRAM_CHAT_ID),
+    env: {
+      TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN ? "SET (" + process.env.TELEGRAM_BOT_TOKEN.slice(0, 5) + "...)" : "MISSING",
+      TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID || "MISSING",
+    },
+  });
+});
+
+// POST /api/_debug/telegram/test — sends a test message with buttons
+app.post("/api/_debug/telegram/test", async (_req, res) => {
+  resetTestCallback();
+
+  const result = await sendTelegramMessage(
+    `🧪 <b>Test from Railway</b>\n\nPolling: ${pollingActive ? '✅ running' : '❌ STOPPED'}\nLastUpdateId: ${lastUpdateId}\nTime: ${new Date().toISOString()}`,
+    [
+      [
+        { text: "✅ Test OK", callback_data: "test_callback_ok" },
+        { text: "❌ Test Fail", callback_data: "test_callback_fail" },
+      ],
+    ]
+  );
+
+  res.json({ ok: result?.ok ?? false, result });
+});
+
+// GET /api/_debug/telegram/test — check if test callback was received
+app.get("/api/_debug/telegram/test", (_req, res) => {
+  const state = getTestCallbackState();
+  res.json({
+    received: state.received,
+    data: state.data,
+    time: state.time ? new Date(state.time).toISOString() : null,
+    ageSeconds: state.time ? Math.floor((Date.now() - state.time) / 1000) : null,
+  });
+});
+
 // Rate Limiting
 const generalLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -316,7 +362,6 @@ const server = app.listen(PORT, "0.0.0.0", () => {
   }
 });
 
-import { stopTelegramPolling } from "./lib/telegram";
 const shutdown = () => {
   console.log("Shutting down gracefully...");
   stopTelegramPolling();
