@@ -324,10 +324,32 @@ router.get("/:slug", authOptional, async (req: AuthRequest, res: Response) => {
 
     // Flatten storyTags for cleaner response
     const { storyTags, coverImage, coverApprovalStatus, ...rest } = story;
+
+    // ── Fetch purchased chapter IDs for this user (if logged in) ──
+    // So the TOC can show 🔓 instead of 🔒 for already-purchased chapters.
+    let purchasedChapterIds: string[] = [];
+    if (req.user?.email) {
+      const viewer = await prisma.user.findUnique({
+        where: { email: req.user.email },
+        select: { id: true },
+      });
+      if (viewer) {
+        const purchases = await prisma.chapterPurchase.findMany({
+          where: {
+            userId: viewer.id,
+            chapterId: { in: story.chapters.map((c) => c.id) },
+          },
+          select: { chapterId: true },
+        });
+        purchasedChapterIds = purchases.map((p) => p.chapterId);
+      }
+    }
+
     res.json({
       ...rest,
       coverUrl: deriveCoverUrl(story),
       storyTagList: storyTags?.map((st: any) => st.tag) ?? [],
+      purchasedChapterIds,
     });
   } catch (error) {
     console.error("Error fetching story:", error);
