@@ -25,17 +25,6 @@ router.get("/:id", authOptional, async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ error: "Chapter not found" });
     }
 
-    // Block access to chapters of unapproved stories (allow author to still see their own)
-    if (chapter.story.approvalStatus !== "approved") {
-      const isAuthor = req.user?.email
-        ? await prisma.user.findUnique({ where: { email: req.user.email }, select: { id: true, role: true } })
-            .then((u) => u?.id === chapter.story.authorId || u?.role === "moderator" || u?.role === "admin")
-        : false;
-      if (!isAuthor) {
-        return res.status(403).json({ error: "Truyện chưa được duyệt" });
-      }
-    }
-
     // A6: Chỉ block chapter bị REJECTED. Pending/approved đều cho đọc.
     // (5 chương đầu vẫn pending nhưng đã qua cổng duyệt story-level, không block.)
     if (chapter.approvalStatus === "rejected") {
@@ -62,9 +51,23 @@ router.get("/:id", authOptional, async (req: AuthRequest, res: Response) => {
       }),
     ]);
 
+    // Block access to chapters of unapproved stories (allow author to still see their own).
+    // checked AFTER prev/next are computed so we can still return them.
+    if (chapter.story.approvalStatus !== "approved") {
+      const isAuthor = req.user?.email
+        ? await prisma.user.findUnique({ where: { email: req.user.email }, select: { id: true, role: true } })
+            .then((u) => u?.id === chapter.story.authorId || u?.role === "moderator" || u?.role === "admin")
+        : false;
+      if (!isAuthor) {
+        return res.status(403).json({ error: "Truyện chưa được duyệt" });
+      }
+      // Author/mod/admin viewing their own unapproved story → give full content
+      return res.json({ ...chapter, prev, next, purchased: true });
+    }
+
     // If chapter is free, return full content to everyone
     if (!chapter.isLocked || chapter.price === 0) {
-      return res.json({ ...chapter, prev, next });
+      return res.json({ ...chapter, prev, next, purchased: true });
     }
 
     // ─── Locked chapter: check auth + purchase ───
@@ -76,6 +79,7 @@ router.get("/:id", authOptional, async (req: AuthRequest, res: Response) => {
         prev,
         next,
         requiresLogin: true,
+        purchased: false,
       });
     }
 
@@ -85,17 +89,17 @@ router.get("/:id", authOptional, async (req: AuthRequest, res: Response) => {
       select: { id: true, role: true },
     });
     if (!user) {
-      return res.json({ ...chapter, content: "", prev, next, requiresLogin: true });
+      return res.json({ ...chapter, content: "", prev, next, requiresLogin: true, purchased: false });
     }
 
     // Author can always read their own chapters
     if (user.id === chapter.story.authorId) {
-      return res.json({ ...chapter, prev, next });
+      return res.json({ ...chapter, prev, next, purchased: true });
     }
 
     // Admin and moderators can read all chapters without purchasing
     if (user.role === "admin" || user.role === "moderator") {
-      return res.json({ ...chapter, prev, next });
+      return res.json({ ...chapter, prev, next, purchased: true });
     }
 
     // Check if user has purchased this chapter
@@ -105,7 +109,7 @@ router.get("/:id", authOptional, async (req: AuthRequest, res: Response) => {
 
     if (purchase) {
       // Already purchased — return full content
-      return res.json({ ...chapter, prev, next });
+      return res.json({ ...chapter, prev, next, purchased: true });
     }
 
     // Not purchased — return metadata without content
@@ -115,6 +119,7 @@ router.get("/:id", authOptional, async (req: AuthRequest, res: Response) => {
       prev,
       next,
       requiresPurchase: true,
+      purchased: false,
     });
   } catch (error) {
     console.error("Error fetching chapter:", error);
