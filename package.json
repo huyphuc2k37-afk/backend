@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "npx prisma generate && tsc",
+    "build": "rm -rf node_modules/.prisma && npx prisma generate && tsc",
     "postinstall": "prisma generate",
     "start": "node dist/index.js",
     "lint": "eslint src/",
