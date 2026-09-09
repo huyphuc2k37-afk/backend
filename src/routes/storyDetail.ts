@@ -182,6 +182,7 @@ router.get("/:slug", authOptional, async (req: AuthRequest, res: Response) => {
   try {
     const { slug } = req.params;
 
+    // Public story data: cache by slug (does NOT vary by viewer)
     const story = await cached(`story:${slug}`, SHORT_TTL, () =>
       prisma.story.findUnique({
         where: { slug },
@@ -326,9 +327,13 @@ router.get("/:slug", authOptional, async (req: AuthRequest, res: Response) => {
     const { storyTags, coverImage, coverApprovalStatus, ...rest } = story;
 
     // ── Fetch purchased chapter IDs for this user (if logged in) ──
-    // So the TOC can show 🔓 instead of 🔒 for already-purchased chapters.
+    // Queried SEPARATELY from cache so each viewer gets correct purchase state.
+    // The story data itself is shared via cache (slug-only key), but per-user
+    // purchase state cannot be cached at that level — otherwise a guest user
+    // would get `purchasedChapterIds: []` cached and the next logged-in user
+    // would see no "Đã mở" badges.
     let purchasedChapterIds: string[] = [];
-    if (req.user?.email) {
+    if (req.user?.email && story.chapters.length > 0) {
       const viewer = await prisma.user.findUnique({
         where: { email: req.user.email },
         select: { id: true },
