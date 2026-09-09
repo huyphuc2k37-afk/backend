@@ -32,12 +32,25 @@ function httpsPost(url: string, body: Record<string, any>): Promise<any> {
       let data = "";
       res.on("data", (chunk) => (data += chunk));
       res.on("end", () => {
-        try { resolve(JSON.parse(data)); } catch { resolve(null); }
+        try {
+          const parsed = JSON.parse(data);
+          // Surface 4xx/5xx so caller can react (esp. 409 getUpdates conflict)
+          if (res.statusCode && res.statusCode >= 400) {
+            parsed._httpStatus = res.statusCode;
+          }
+          resolve(parsed);
+        } catch {
+          resolve({ ok: false, _httpStatus: res.statusCode });
+        }
       });
     });
     req.on("error", (err) => {
       console.error("[Telegram] https request error:", err.message);
       resolve(null);
+    });
+    // Telegram will close long-poll early; set a sane timeout
+    req.setTimeout(60_000, () => {
+      req.destroy(new Error("telegram_post_timeout"));
     });
     req.write(payload);
     req.end();
@@ -46,16 +59,26 @@ function httpsPost(url: string, body: Record<string, any>): Promise<any> {
 
 function httpsGet(url: string): Promise<any> {
   return new Promise((resolve) => {
-    https.get(url, (res) => {
+    const req = https.get(url, (res) => {
       let data = "";
       res.on("data", (chunk) => (data += chunk));
       res.on("end", () => {
-        try { resolve(JSON.parse(data)); } catch { resolve(null); }
+        try {
+          const parsed = JSON.parse(data);
+          if (res.statusCode && res.statusCode >= 400) {
+            parsed._httpStatus = res.statusCode;
+          }
+          resolve(parsed);
+        } catch {
+          resolve({ ok: false, _httpStatus: res.statusCode });
+        }
       });
-    }).on("error", (err) => {
+    });
+    req.on("error", (err) => {
       console.error("[Telegram] https get error:", err.message);
       resolve(null);
     });
+    req.setTimeout(45_000, () => req.destroy(new Error("telegram_get_timeout")));
   });
 }
 
@@ -178,6 +201,9 @@ async function createNotificationSafe(args: Parameters<typeof prisma.notificatio
   }
 }
 
+// CUID/id pattern: [a-z0-9]{20,32} (Prisma default cuid = 25 chars)
+const CUID_PATTERN = /^[a-z0-9]{20,32}$/i;
+
 // ─── Process callback from Telegram button click ─
 async function handleCallback(callbackQueryId: string, data: string, chatId: number, messageId: number) {
   // Parse action: approve_deposit_<id>, reject_deposit_<id>, approve_withdraw_<id>, reject_withdraw_<id>
@@ -187,7 +213,15 @@ async function handleCallback(callbackQueryId: string, data: string, chatId: num
     return;
   }
 
-  const [, action, type, id] = match;
+  const [, action, type, rawId] = match;
+
+  // Strict id validation: avoid passing junk to Prisma → avoid crashing into the generic catch.
+  const id = rawId.trim();
+  if (!CUID_PATTERN.test(id)) {
+    console.warn(`[Telegram] reject callback — invalid id shape: ${JSON.stringify(rawId)}`);
+    await answerCallbackQuery(callbackQueryId, "❌ Mã giao dịch không hợp lệ (id sai định dạng)");
+    return;
+  }
 
   try {
     if (type === "deposit") {
@@ -378,13 +412,28 @@ async function handleCallback(callbackQueryId: string, data: string, chatId: num
         );
       }
     }
-  } catch (err) {
-    console.error("[Telegram] handleCallback error:", err);
-    await answerCallbackQuery(callbackQueryId, "⚠️ Có lỗi xảy ra, vui lòng thử trên web");
+  } catch (err: any) {
+    console.error(`[Telegram] handleCallback error (action=${action}, type=${type}, id=${id}):`, err?.message || err);
+
+    // Prisma P2025 = "Record not found"
+    if (err?.code === "P2025") {
+      await answerCallbackQuery(callbackQueryId, "❌ Không tìm thấy giao dịch (đã bị xoá?)");
+      return;
+    }
+    // Prisma P2034 = "Transaction conflict due to race / serialization"
+    if (err?.code === "P2034" || err?.message === "ALREADY_PROCESSED") {
+      await answerCallbackQuery(callbackQueryId, "⚠️ Giao dịch vừa được xử lý bởi người khác");
+      return;
+    }
+    await answerCallbackQuery(callbackQueryId, "⚠️ Lỗi hệ thống, vui lòng thử lại hoặc dùng trang admin");
   }
 }
 
 // ─── Polling loop ────────────────────────────────
+// Module-level guard to survive hot-reload / re-evaluate.
+// Uses a WeakRef-like stamp so that if the module is re-imported (new instance),
+// the OLD instance won't conflict with the NEW one.
+let _pollingStamp: string | null = null;
 let pollingActive = false;
 let lastUpdateId = 0;
 
@@ -394,19 +443,35 @@ export function startTelegramPolling() {
     return;
   }
 
-  if (pollingActive) return;
+  // Stamp this invocation so multiple calls (e.g. hot-reload) can be distinguished.
+  if (pollingActive) {
+    console.log("[Telegram] Polling already active (stamp ok), skipping duplicate start.");
+    return;
+  }
+  const stamp = `${Date.now()}_${Math.random()}`;
+  _pollingStamp = stamp;
   pollingActive = true;
   console.log("[Telegram] Bot polling started.");
 
   const poll = async () => {
-    while (pollingActive) {
+    while (pollingActive && _pollingStamp === stamp) {
       try {
         const data: any = await httpsGet(
           `https://api.telegram.org/bot${BOT_TOKEN}/getUpdates?offset=${lastUpdateId + 1}&timeout=30&allowed_updates=["callback_query"]`
         );
 
+        // 409 = another process / old instance is consuming getUpdates — stop this instance's polling.
+        if (data && data._httpStatus === 409) {
+          console.error("[Telegram] 409 Conflict: another process is polling this bot. Stopping this instance.");
+          pollingActive = false;
+          return;
+        }
+
         if (data && data.ok && Array.isArray(data.result)) {
           for (const update of data.result) {
+            // Guard: stop processing if stamp changed (module re-evaluated)
+            if (_pollingStamp !== stamp) return;
+
             lastUpdateId = update.update_id;
 
             if (update.callback_query) {
@@ -415,7 +480,6 @@ export function startTelegramPolling() {
               const messageId = cq.message?.message_id;
 
               if (chatId && messageId && cq.data) {
-                // Fire and forget — don't block polling
                 handleCallback(cq.id, cq.data, chatId, messageId).catch((err) =>
                   console.error("[Telegram] callback handler error:", err)
                 );
@@ -425,15 +489,18 @@ export function startTelegramPolling() {
         }
       } catch (err: any) {
         console.error("[Telegram] Polling error:", err?.message || err);
-        // Wait a bit before retrying on real errors
+        // Wait before retry on real errors
         await new Promise((r) => setTimeout(r, 5000));
       }
     }
   };
 
-  poll();
+  poll().catch((err) =>
+    console.error("[Telegram] poll() threw:", err?.message || err)
+  );
 }
 
 export function stopTelegramPolling() {
   pollingActive = false;
+  _pollingStamp = null;
 }
