@@ -72,20 +72,24 @@ export function deriveCoverUrl(story: StoryCoverShape): string | null {
     return img;
   }
 
-  // 4. Known healthy CDN — return direct URL so the browser doesn't proxy
-  //    through the backend. This avoids e.g. Supabase HTTP 402 quota issues.
-  //    We recognize: res.cloudinary.com (already handled above), imgur, unsplash,
-  //    googleusercontent, github raw, generic https on a known image host.
-  //    Supabase (.supabase.co) is intentionally excluded because it sometimes
-  //    returns 402 Payment Required when the project hits egress quota.
-  if (/^https?:\/\//i.test(img)) {
-    const isSupabase = /\.supabase\.co\b/i.test(img);
-    if (!isSupabase) {
-      return img;
-    }
+  // 4. Supabase URL — return null so the UI shows the placeholder instead of
+  //    a broken image. We do this because Supabase Storage currently returns
+  //    HTTP 402 Payment Required when the project hits egress quota, which
+  //    surfaces as 502 on the frontend. The migration script
+  //    scripts/migrate-supabase-to-cloudinary.ts will re-point these rows
+  //    to Cloudinary once Supabase is reachable again (or via a re-upload).
+  if (/\.supabase\.co\b/i.test(img)) {
+    return null;
   }
 
-  // 5. Anything else (Supabase or unknown) — stream through the backend.
+  // 5. Known healthy CDN — return direct URL so the browser doesn't proxy
+  //    through the backend. This avoids extra load on the backend for
+  //    static image hosts (imgur, unsplash, googleusercontent, github raw).
+  if (/^https?:\/\//i.test(img)) {
+    return img;
+  }
+
+  // 6. Anything else (relative path or unknown) — stream through the backend.
   if (!story.id) return null;
   return absoluteBackendUrl(`/api/stories/${story.id}/cover`);
 }
