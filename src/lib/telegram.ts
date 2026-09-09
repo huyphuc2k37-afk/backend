@@ -241,6 +241,7 @@ async function handleCallback(callbackQueryId: string, data: string, chatId: num
 
   try {
     if (type === "deposit") {
+      console.log(`[Telegram] deposit callback: action=${action} id=${id} (length=${id.length})`);
       const deposit = await prisma.deposit.findUnique({ where: { id } });
       if (!deposit) {
         await answerCallbackQuery(callbackQueryId, "❌ Không tìm thấy giao dịch nạp xu");
@@ -355,6 +356,7 @@ async function handleCallback(callbackQueryId: string, data: string, chatId: num
         );
       }
     } else if (type === "withdraw") {
+      console.log(`[Telegram] withdraw callback: action=${action} id=${id} (length=${id.length})`);
       const withdrawal = await prisma.withdrawal.findUnique({ where: { id } });
       if (!withdrawal) {
         await answerCallbackQuery(callbackQueryId, "❌ Không tìm thấy yêu cầu rút tiền");
@@ -431,8 +433,18 @@ async function handleCallback(callbackQueryId: string, data: string, chatId: num
   } catch (err: any) {
     const errMsg = err?.message || String(err);
     const errCode = err?.code || "N/A";
-    const errStack = err?.stack ? `\n\nStack: ${err.stack.split('\n').slice(1, 4).join(' | ')}` : "";
-    console.error(`[Telegram] handleCallback error (action=${action}, type=${type}, id=${id}, code=${errCode}): ${errMsg}${errStack}`);
+    const errStack = err?.stack ? err.stack.split('\n').slice(1, 5).join('\n') : "";
+    const fullMsg = `[Telegram] handleCallback error\naction=${action} type=${type} id=${id}\ncode=${errCode} msg=${errMsg}\nstack:\n${errStack}`;
+    console.error(fullMsg);
+
+    // Send full error to admin chat so we can debug
+    try {
+      await tgPost("sendMessage", {
+        chat_id: CHAT_ID,
+        text: `🐛 <b>TELEGRAM DEBUG</b>\n\n${fullMsg.slice(0, 4000)}`,
+        parse_mode: "HTML",
+      });
+    } catch (_) {}
 
     // Prisma P2025 = "Record not found"
     if (err?.code === "P2025") {
@@ -444,10 +456,7 @@ async function handleCallback(callbackQueryId: string, data: string, chatId: num
       await answerCallbackQuery(callbackQueryId, "⚠️ Giao dịch vừa được xử lý bởi người khác");
       return;
     }
-    // Send DETAILED error back so we can debug
-    const detail = `code=${errCode} msg=${errMsg.slice(0, 60)}`;
-    const sent = await answerCallbackQuery(callbackQueryId, `⚠️ Lỗi (${detail}). Thử lại hoặc dùng trang admin.`);
-    console.error(`[Telegram] answerCallbackQuery sent=${!!sent}, null means network/permission issue`);
+    await answerCallbackQuery(callbackQueryId, `⚠️ Lỗi hệ thống (${errCode}). Dùng trang admin.`);
   }
 }
 
