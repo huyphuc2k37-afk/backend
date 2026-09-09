@@ -45,11 +45,12 @@ function httpsPost(url: string, body: Record<string, any>): Promise<any> {
       });
     });
     req.on("error", (err) => {
-      console.error("[Telegram] https request error:", err.message);
+      console.error(`[Telegram] https POST error: ${err.message} → resolving null (will cause null return)`);
       resolve(null);
     });
-    // Telegram will close long-poll early; set a sane timeout
-    req.setTimeout(60_000, () => {
+    // Telegram API is fast; 10s is plenty. Long timeout hides real errors.
+    req.setTimeout(10_000, () => {
+      console.error(`[Telegram] https POST timeout after 10s for ${urlObj.pathname}`);
       req.destroy(new Error("telegram_post_timeout"));
     });
     req.write(payload);
@@ -75,10 +76,13 @@ function httpsGet(url: string): Promise<any> {
       });
     });
     req.on("error", (err) => {
-      console.error("[Telegram] https get error:", err.message);
+      console.error(`[Telegram] https GET error: ${err.message} → resolving null`);
       resolve(null);
     });
-    req.setTimeout(45_000, () => req.destroy(new Error("telegram_get_timeout")));
+    req.setTimeout(15_000, () => {
+      console.error(`[Telegram] https GET timeout after 15s`);
+      req.destroy(new Error("telegram_get_timeout"));
+    });
   });
 }
 
@@ -425,7 +429,10 @@ async function handleCallback(callbackQueryId: string, data: string, chatId: num
       }
     }
   } catch (err: any) {
-    console.error(`[Telegram] handleCallback error (action=${action}, type=${type}, id=${id}):`, err?.message || err);
+    const errMsg = err?.message || String(err);
+    const errCode = err?.code || "N/A";
+    const errStack = err?.stack ? `\n\nStack: ${err.stack.split('\n').slice(1, 4).join(' | ')}` : "";
+    console.error(`[Telegram] handleCallback error (action=${action}, type=${type}, id=${id}, code=${errCode}): ${errMsg}${errStack}`);
 
     // Prisma P2025 = "Record not found"
     if (err?.code === "P2025") {
@@ -437,7 +444,10 @@ async function handleCallback(callbackQueryId: string, data: string, chatId: num
       await answerCallbackQuery(callbackQueryId, "⚠️ Giao dịch vừa được xử lý bởi người khác");
       return;
     }
-    await answerCallbackQuery(callbackQueryId, "⚠️ Lỗi hệ thống, vui lòng thử lại hoặc dùng trang admin");
+    // Send DETAILED error back so we can debug
+    const detail = `code=${errCode} msg=${errMsg.slice(0, 60)}`;
+    const sent = await answerCallbackQuery(callbackQueryId, `⚠️ Lỗi (${detail}). Thử lại hoặc dùng trang admin.`);
+    console.error(`[Telegram] answerCallbackQuery sent=${!!sent}, null means network/permission issue`);
   }
 }
 
