@@ -10,6 +10,24 @@ const router = Router();
 // A6: chỉ duyệt 5 chương đầu; chương sau tự động approved khi story approved
 const FIRST_CHAPTERS_FOR_MODERATION = 5;
 
+/**
+ * Auto-approve all chapters > FIRST_CHAPTERS_FOR_MODERATION for a given story.
+ * Called whenever a story transitions to "approved" — either via manual mod action
+ * or via any future auto-approve cron. This keeps the `approvalStatus` column in
+ * sync with the `chapterApprovalStatusFor()` logic so that readers see "approved"
+ * immediately (not "pending") without needing a DB re-read.
+ */
+async function autoApproveStoryChapters(storyId: string) {
+  await prisma.chapter.updateMany({
+    where: {
+      storyId,
+      number: { gt: FIRST_CHAPTERS_FOR_MODERATION },
+      approvalStatus: { not: "approved" },
+    },
+    data: { approvalStatus: "approved", rejectionReason: null },
+  });
+}
+
 // ─── Helper: resolve reviewer names from user IDs ──
 async function resolveReviewerNames(ids: (string | null | undefined)[]): Promise<Record<string, string>> {
   const uniqueIds = [...new Set(ids.filter((id): id is string => !!id))];
@@ -209,6 +227,9 @@ router.put("/stories/:id/approve", authRequired, modRequired, async (req: AuthRe
         reviewedAt: new Date(),
       },
     });
+
+    // ─── A6: auto-approve all chapters > 5 so they show "Đã duyệt" immediately ───
+    await autoApproveStoryChapters(req.params.id);
 
     // Notify the author
     try {
